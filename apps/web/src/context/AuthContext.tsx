@@ -1,45 +1,58 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 
 interface AuthState {
-  token: string | null;
+  isConnected: boolean;
+  isLoading: boolean;
   wallet: string | null;
   userId: string | null;
-  isConnected: boolean;
-  login: (token: string, wallet: string) => void;
+  username: string | null;
+  email: string | null;
+  login: () => void;
   logout: () => void;
+  loginWithWallet: () => void;
 }
 
 const AuthContext = createContext<AuthState>({
-  token: null, wallet: null, userId: null, isConnected: false,
-  login: () => {}, logout: () => {},
+  isConnected: false, isLoading: true,
+  wallet: null, userId: null, username: null, email: null,
+  login: () => {}, logout: () => {}, loginWithWallet: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('ontrail_token'));
-  const [wallet, setWallet] = useState<string | null>(localStorage.getItem('ontrail_wallet'));
-  const [userId, setUserId] = useState<string | null>(localStorage.getItem('ontrail_user_id'));
+  const { ready, authenticated, user, login, logout } = usePrivy();
+  const [wallet, setWallet] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
 
-  const login = (t: string, w: string) => {
-    setToken(t); setWallet(w);
-    localStorage.setItem('ontrail_token', t);
-    localStorage.setItem('ontrail_wallet', w);
-    // Decode user ID from JWT
-    try {
-      const payload = JSON.parse(atob(t.split('.')[1]));
-      setUserId(payload.sub);
-      localStorage.setItem('ontrail_user_id', payload.sub);
-    } catch {}
-  };
+  useEffect(() => {
+    if (ready && authenticated && user) {
+      // Get wallet from Privy user (embedded or linked)
+      const w = user.wallet?.address || user.linkedAccounts?.find(
+        (a: any) => a.type === 'wallet'
+      )?.address || null;
+      setWallet(w);
+      setUserId(user.id);
+      setEmail(user.email?.address || null);
+      // Username from Privy custom fields or generate from wallet
+      setUsername(w ? w.slice(2, 8).toLowerCase() : null);
+    } else {
+      setWallet(null); setUserId(null); setUsername(null); setEmail(null);
+    }
+  }, [ready, authenticated, user]);
 
-  const logout = () => {
-    setToken(null); setWallet(null); setUserId(null);
-    localStorage.removeItem('ontrail_token');
-    localStorage.removeItem('ontrail_wallet');
-    localStorage.removeItem('ontrail_user_id');
+  const loginWithWallet = () => {
+    login({ loginMethods: ['wallet'] });
   };
 
   return (
-    <AuthContext.Provider value={{ token, wallet, userId, isConnected: !!token, login, logout }}>
+    <AuthContext.Provider value={{
+      isConnected: authenticated,
+      isLoading: !ready,
+      wallet, userId, username, email,
+      login, logout, loginWithWallet,
+    }}>
       {children}
     </AuthContext.Provider>
   );

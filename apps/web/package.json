@@ -1,6 +1,6 @@
 {
   "name": "@ontrail/web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,7 +20,10 @@
     "wagmi": "^2.12.0",
     "viem": "^2.21.0",
     "@wagmi/core": "^2.13.0",
-    "mapbox-gl": "^3.7.0"
+    "@privy-io/react-auth": "^1.88.0",
+    "connectkit": "^1.8.0",
+    "mapbox-gl": "^3.7.0",
+    "framer-motion": "^11.5.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",

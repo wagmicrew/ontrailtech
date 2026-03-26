@@ -1,71 +1,115 @@
-import { Outlet, Link } from 'react-router-dom';
+import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../lib/api';
+import { ConnectKitButton } from 'connectkit';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const NAV_ITEMS = [
+  { path: '/explore', label: 'nav.explore', icon: '🗺️' },
+  { path: '/routes', label: 'nav.routes', icon: '🏃' },
+  { path: '/tokens', label: 'nav.tokens', icon: '📈' },
+  { path: '/profile', label: 'nav.profile', icon: '👤' },
+];
 
 export default function Layout() {
   const { t } = useTranslation();
-  const { isConnected, wallet, login, logout } = useAuth();
-
-  const connectWallet = async () => {
-    if (!(window as any).ethereum) {
-      alert('Please install MetaMask to connect.');
-      return;
-    }
-    try {
-      const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-      const addr = accounts[0];
-      const { nonce, message } = await api.getChallenge(addr);
-      const signature = await (window as any).ethereum.request({
-        method: 'personal_sign', params: [message, addr],
-      });
-      try {
-        const { access_token } = await api.login(addr, signature, nonce);
-        login(access_token, addr);
-      } catch {
-        const username = prompt('New user! Choose a username (3-20 chars):');
-        if (!username) return;
-        const { nonce: n2, message: m2 } = await api.getChallenge(addr);
-        const sig2 = await (window as any).ethereum.request({
-          method: 'personal_sign', params: [m2, addr],
-        });
-        const { access_token } = await api.register(addr, sig2, n2, username);
-        login(access_token, addr);
-      }
-    } catch (err: any) {
-      alert(err.message || 'Connection failed');
-    }
-  };
+  const { isConnected, isLoading, wallet, login, logout } = useAuth();
+  const location = useLocation();
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <nav className="bg-ontrail-700 text-white px-6 py-3 flex items-center gap-6 shadow-lg">
-        <Link to="/" className="text-xl font-bold tracking-tight">🏃 {t('app.title')}</Link>
-        <div className="flex gap-4 ml-auto text-sm">
-          <Link to="/explore" className="hover:text-ontrail-50">{t('nav.explore')}</Link>
-          <Link to="/routes" className="hover:text-ontrail-50">{t('nav.routes')}</Link>
-          <Link to="/tokens" className="hover:text-ontrail-50">{t('nav.tokens')}</Link>
-          <Link to="/profile" className="hover:text-ontrail-50">{t('nav.profile')}</Link>
-        </div>
-        {isConnected ? (
-          <div className="flex items-center gap-2 ml-4">
-            <span className="text-xs bg-ontrail-900 px-2 py-1 rounded font-mono">
-              {wallet?.slice(0, 6)}...{wallet?.slice(-4)}
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-green-50/30">
+      {/* Nav */}
+      <nav className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-gray-100 px-6 py-3">
+        <div className="max-w-7xl mx-auto flex items-center">
+          <Link to="/" className="flex items-center gap-2 group">
+            <span className="text-2xl">🏃</span>
+            <span className="text-xl font-bold bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
+              {t('app.title')}
             </span>
-            <button onClick={logout} className="text-xs hover:text-red-300">Disconnect</button>
+          </Link>
+
+          <div className="hidden md:flex items-center gap-1 ml-8">
+            {NAV_ITEMS.map(({ path, label, icon }) => (
+              <Link key={path} to={path}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  location.pathname === path
+                    ? 'bg-green-50 text-green-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}>
+                <span className="mr-1">{icon}</span> {t(label)}
+              </Link>
+            ))}
           </div>
-        ) : (
-          <button onClick={connectWallet}
-            className="ml-4 bg-white text-ontrail-700 px-3 py-1 rounded text-sm font-medium hover:bg-ontrail-50">
-            {t('auth.connect')}
-          </button>
-        )}
+
+          <div className="ml-auto flex items-center gap-3">
+            {isLoading ? (
+              <div className="w-24 h-9 bg-gray-100 rounded-lg animate-pulse" />
+            ) : isConnected ? (
+              <div className="flex items-center gap-2">
+                <ConnectKitButton.Custom>
+                  {({ show }) => (
+                    <button onClick={show}
+                      className="text-xs bg-gray-100 text-gray-700 px-3 py-2 rounded-lg font-mono hover:bg-gray-200 transition">
+                      {wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : 'Wallet'}
+                    </button>
+                  )}
+                </ConnectKitButton.Custom>
+                <button onClick={logout}
+                  className="text-xs text-gray-500 hover:text-red-500 transition px-2 py-2">
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button onClick={login}
+                  className="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:shadow-lg hover:shadow-green-500/25 transition-all">
+                  Get Started
+                </button>
+                <ConnectKitButton.Custom>
+                  {({ show }) => (
+                    <button onClick={show}
+                      className="border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition">
+                      Connect Wallet
+                    </button>
+                  )}
+                </ConnectKitButton.Custom>
+              </div>
+            )}
+          </div>
+        </div>
       </nav>
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
-        <Outlet />
+
+      {/* Page content with animation */}
+      <main className="flex-1">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="max-w-7xl mx-auto px-6 py-8"
+          >
+            <Outlet />
+          </motion.div>
+        </AnimatePresence>
       </main>
-      <footer className="bg-gray-100 text-center text-xs text-gray-500 py-4">
-        OnTrail © 2025 — Web3 Social-Fi for Explorers
+
+      {/* Mobile nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-gray-100 px-2 py-2 z-50">
+        <div className="flex justify-around">
+          {NAV_ITEMS.map(({ path, icon }) => (
+            <Link key={path} to={path}
+              className={`p-2 rounded-lg text-xl ${location.pathname === path ? 'bg-green-50' : ''}`}>
+              {icon}
+            </Link>
+          ))}
+        </div>
+      </nav>
+
+      {/* Footer */}
+      <footer className="hidden md:block bg-white/50 border-t border-gray-100 text-center text-xs text-gray-400 py-6">
+        <p>OnTrail — Web3 SocialFi for Explorers • Built on Base</p>
       </footer>
     </div>
   );
