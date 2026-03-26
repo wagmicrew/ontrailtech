@@ -15,6 +15,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  // Onboarding
+  onboardingRegister: (privyToken: string, referrerUsername?: string | null, runnerContext?: string | null) =>
+    request<{
+      access_token: string;
+      refresh_token: string;
+      token_type: string;
+      user: { id: string; username: string | null; wallet_address: string; email: string | null; reputation_score: number };
+    }>('/onboarding/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        privy_token: privyToken,
+        ...(referrerUsername ? { referrer_username: referrerUsername } : {}),
+        ...(runnerContext ? { runner_context: runnerContext } : {}),
+      }),
+    }),
+
   // Auth
   getChallenge: (wallet: string) =>
     request<{ nonce: string; message: string }>('/auth/challenge', {
@@ -67,6 +83,37 @@ export const api = {
 
   // Site Settings (public)
   getPublicSettings: () => request<Record<string, string>>('/admin/public-settings'),
+
+  // FriendPass
+  getFriendPassPrice: (runnerId: string) => request<any>(`/friendpass/price/${runnerId}`),
+  getFriendPassStatus: (txHash: string) => request<any>(`/runners/friendpass/status/${txHash}`),
+
+  // Identity
+  checkUsername: (username: string) => request<any>(`/identity/check/${username}`),
+  claimIdentity: (username: string, avatarUrl?: string) =>
+    request<any>('/identity/claim', {
+      method: 'POST', body: JSON.stringify({ username, avatar_url: avatarUrl }),
+    }),
+
+  // Referrals
+  generateReferral: () => request<any>('/referrals/generate', { method: 'POST' }),
+  getReferralStats: (userId: string) => request<any>(`/referrals/stats/${userId}`),
+  getInfluenceGraph: (userId: string) => request<any>(`/referrals/influence/${userId}`),
+
+  // Runners
+  getTokenProgress: (runnerId: string) => request<any>(`/runners/${runnerId}/token-progress`),
+  getDashboardProgress: () => request<any>('/runners/dashboard/progress'),
+
+  // Notifications
+  getNotifications: () => request<any>('/runners/notifications'),
+  markNotificationRead: (id: string) =>
+    request<any>(`/runners/notifications/${id}/read`, { method: 'POST' }),
+
+  // Cards
+  generateCard: (cardType: string, headline: string, data: any) =>
+    request<any>('/runners/cards/generate', {
+      method: 'POST', body: JSON.stringify({ card_type: cardType, headline, data }),
+    }),
 
   // Admin Settings
   getAllSettings: () => request<any[]>('/admin/settings'),

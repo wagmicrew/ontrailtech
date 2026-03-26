@@ -81,6 +81,13 @@ async def calculate_reputation(db: AsyncSession, user_id) -> dict:
 async def record_reputation_event(
     db: AsyncSession, user_id, event_type: str, weight: float, metadata: dict = None
 ):
+    """Record a reputation event and update user score.
+    
+    Enforces:
+    - Monotonicity: positive events never decrease score
+    - Floor: score never below 0.0
+    - Each event includes event_type, weight, optional event_metadata
+    """
     event = ReputationEvent(
         user_id=user_id, event_type=event_type,
         weight=weight, event_metadata=metadata,
@@ -88,8 +95,17 @@ async def record_reputation_event(
     db.add(event)
 
     # Update user's cached reputation score
-    breakdown = await calculate_reputation(db, user_id)
     user = await db.get(User, user_id)
     if user:
-        user.reputation_score = breakdown["total"]
+        old_score = user.reputation_score or 0.0
+        breakdown = await calculate_reputation(db, user_id)
+        new_score = breakdown["total"]
+
+        # Monotonicity: positive events never decrease score
+        if weight > 0:
+            new_score = max(new_score, old_score)
+
+        # Floor: score never below 0.0
+        user.reputation_score = max(0.0, new_score)
+
     await db.flush()

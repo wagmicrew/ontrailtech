@@ -44,10 +44,7 @@ export default function Layout() {
       <nav className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-gray-100 px-6 py-3">
         <div className="max-w-7xl mx-auto flex items-center">
           <Link to="/" className="flex items-center gap-2 group">
-            <span className="text-2xl">🏃</span>
-            <span className="text-xl font-bold bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
-              {t('app.title')}
-            </span>
+            <img src="/ontrail-logo.png" alt="OnTrail" className="h-6 opacity-90" />
           </Link>
 
           <div className="hidden md:flex items-center gap-1 ml-8">
@@ -185,7 +182,7 @@ export default function Layout() {
           <motion.div key={location.pathname}
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="max-w-7xl mx-auto px-6 py-8">
+            className={location.pathname === '/' ? '' : 'max-w-7xl mx-auto px-6 py-8'}>
             <Outlet />
           </motion.div>
         </AnimatePresence>
@@ -203,7 +200,7 @@ export default function Layout() {
         </div>
       </nav>
 
-      <footer className="hidden md:block bg-white/50 border-t border-gray-100 text-center text-xs text-gray-400 py-6">
+      <footer className={`hidden md:block bg-white/50 border-t border-gray-100 text-center text-xs text-gray-400 py-6 ${location.pathname === '/' ? '!hidden' : ''}`}>
         <p>OnTrail — Web3 SocialFi for Explorers • Built on Base</p>
       </footer>
     </div>

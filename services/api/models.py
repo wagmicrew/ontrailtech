@@ -221,6 +221,24 @@ class TokenTransaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+# ── Referrals ──
+
+class Referral(Base):
+    __tablename__ = "referrals"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    referrer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    referred_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    referral_code = Column(String(64), nullable=False, index=True)
+    runner_context = Column(String(100), nullable=True)
+    status = Column(String(20), default="registered")  # pending | registered | converted
+    converted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_referrals_referrer_referred", "referrer_id", "referred_id", unique=True),
+    )
+
+
 # ── Reputation & Fraud ──
 
 class ReputationEvent(Base):
@@ -307,3 +325,59 @@ class SiteSetting(Base):
     description = Column(Text, nullable=True)
     updated_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ── Referral Rewards ──
+
+class ReferralReward(Base):
+    __tablename__ = "referral_rewards"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    referral_id = Column(UUID(as_uuid=True), ForeignKey("referrals.id"), nullable=False)
+    referrer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    reward_type = Column(String(50), nullable=False)  # reputation | commission
+    amount = Column(Numeric, nullable=False, default=0)
+    tx_hash = Column(String(66), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Journey Events ──
+
+class JourneyEvent(Base):
+    __tablename__ = "journey_events"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    session_id = Column(String(100), nullable=True)
+    runner_username = Column(String(100), nullable=True)
+    phase = Column(String(50), nullable=False)
+    action = Column(String(100), nullable=False)
+    event_metadata = Column("metadata", JSON, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    duration_ms = Column(Integer, nullable=True)
+
+
+# ── Shareable Cards ──
+
+class ShareableCard(Base):
+    __tablename__ = "shareable_cards"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    type = Column(String(50), nullable=False)
+    headline = Column(String(200), nullable=False)
+    image_url = Column(Text, nullable=True)
+    share_count = Column(Integer, default=0)
+    click_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── User Notifications ──
+
+class UserNotification(Base):
+    __tablename__ = "user_notifications"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    type = Column(String(50), nullable=False)
+    message = Column(Text, nullable=False)
+    urgency = Column(String(20), default="normal")  # low | normal | high | critical
+    action_url = Column(Text, nullable=True)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

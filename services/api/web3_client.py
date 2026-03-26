@@ -61,6 +61,18 @@ BONDING_CURVE_ABI = [
      "stateMutability": "payable", "type": "function"},
 ]
 
+FRIEND_SHARES_ABI = [
+    {"inputs": [{"name": "runner", "type": "address"}],
+     "name": "getPrice", "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+    {"inputs": [{"name": "runner", "type": "address"}],
+     "name": "totalShares", "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+    {"inputs": [{"name": "runner", "type": "address"}, {"name": "holder", "type": "address"}],
+     "name": "getShares", "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+]
+
 
 def get_poi_nft_client() -> Optional[ContractClient]:
     if settings.poi_nft_address:
@@ -77,6 +89,12 @@ def get_route_nft_client() -> Optional[ContractClient]:
 def get_bonding_curve_client() -> Optional[ContractClient]:
     if settings.bonding_curve_address:
         return ContractClient(settings.bonding_curve_address, BONDING_CURVE_ABI)
+    return None
+
+
+def get_friend_shares_client() -> Optional[ContractClient]:
+    if settings.friend_shares_address:
+        return ContractClient(settings.friend_shares_address, FRIEND_SHARES_ABI)
     return None
 
 

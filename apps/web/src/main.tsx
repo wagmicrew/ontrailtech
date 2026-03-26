@@ -34,7 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <PrivyProvider
       appId={PRIVY_APP_ID}
       config={{
-        loginMethods: ['email', 'google', 'twitter', 'wallet'],
+        loginMethods: ['email', 'google'],
         appearance: {
           theme: 'light',
           accentColor: '#22c55e',

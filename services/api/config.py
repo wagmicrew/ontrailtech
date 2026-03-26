@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     bonding_curve_address: str = ""
     tge_factory_address: str = ""
     treasury_address: str = ""
+    friend_shares_address: str = ""
 
     class Config:
         env_file = ".env"
