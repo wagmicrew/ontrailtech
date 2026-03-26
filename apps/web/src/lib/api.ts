@@ -61,4 +61,15 @@ export const api = {
 
   // Health
   health: () => request<{ status: string }>('/health'),
+
+  // Roles
+  getUserRoles: (userId: string) => request<{ roles: string[] }>(`/users/${userId}/roles`),
+
+  // Site Settings (public)
+  getPublicSettings: () => request<Record<string, string>>('/admin/public-settings'),
+
+  // Admin Settings
+  getAllSettings: () => request<any[]>('/admin/settings'),
+  updateSetting: (key: string, value: string) =>
+    request<any>('/admin/settings', { method: 'POST', body: JSON.stringify({ setting_key: key, setting_value: value }) }),
 };

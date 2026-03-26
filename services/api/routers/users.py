@@ -63,3 +63,10 @@ async def get_reputation(user_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     breakdown = await calculate_reputation(db, user.id)
     return breakdown
+
+
+@router.get("/{user_id}/roles")
+async def get_user_roles_endpoint(user_id: str, db: AsyncSession = Depends(get_db)):
+    from dependencies import get_user_roles
+    roles = await get_user_roles(user_id, db)
+    return {"user_id": user_id, "roles": roles}

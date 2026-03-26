@@ -13,8 +13,13 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { t } = useTranslation();
-  const { isConnected, isLoading, wallet, login, logout } = useAuth();
+  const { isConnected, isLoading, wallet, isAdmin, isAncientOwner, login, logout } = useAuth();
   const location = useLocation();
+
+  const navItems = [
+    ...NAV_ITEMS,
+    ...(isAdmin ? [{ path: '/admin', label: 'Admin', icon: '⚙️' }] : []),
+  ];
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-green-50/30">
@@ -29,14 +34,14 @@ export default function Layout() {
           </Link>
 
           <div className="hidden md:flex items-center gap-1 ml-8">
-            {NAV_ITEMS.map(({ path, label, icon }) => (
+            {navItems.map(({ path, label, icon }) => (
               <Link key={path} to={path}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                   location.pathname === path
                     ? 'bg-green-50 text-green-700'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}>
-                <span className="mr-1">{icon}</span> {t(label)}
+                <span className="mr-1">{icon}</span> {label.startsWith('nav.') ? t(label) : label}
               </Link>
             ))}
           </div>

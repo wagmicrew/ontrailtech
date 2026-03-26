@@ -44,3 +44,28 @@ async def require_admin(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+async def require_ancient_owner(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Require AncientOwner role — full platform control."""
+    result = await db.execute(
+        select(UserRole)
+        .join(ACLRole, UserRole.role_id == ACLRole.id)
+        .where(UserRole.user_id == user.id, ACLRole.role_name == "ancient_owner")
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="AncientOwner access required")
+    return user
+
+
+async def get_user_roles(user_id, db: AsyncSession) -> list[str]:
+    """Get all role names for a user."""
+    result = await db.execute(
+        select(ACLRole.role_name)
+        .join(UserRole, UserRole.role_id == ACLRole.id)
+        .where(UserRole.user_id == user_id)
+    )
+    return [r[0] for r in result.all()]

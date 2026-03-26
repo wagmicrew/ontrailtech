@@ -110,3 +110,70 @@ async def get_audit_logs(
         }
         for log in logs
     ]
+
+
+# ── Site Settings ──
+
+@router.get("/settings")
+async def get_all_settings(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from models import SiteSetting
+    result = await db.execute(select(SiteSetting).order_by(SiteSetting.setting_key))
+    settings = result.scalars().all()
+    return [
+        {
+            "id": str(s.id), "key": s.setting_key, "value": s.setting_value,
+            "description": s.description, "updated_at": str(s.updated_at),
+        }
+        for s in settings
+    ]
+
+
+class UpdateSettingRequest(BaseModel):
+    setting_key: str
+    setting_value: str
+
+
+@router.post("/settings")
+async def update_setting(
+    req: UpdateSettingRequest,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from models import SiteSetting
+    from redis_client import cache_delete
+    result = await db.execute(select(SiteSetting).where(SiteSetting.setting_key == req.setting_key))
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.setting_value = req.setting_value
+        setting.updated_by = user.id
+    else:
+        setting = SiteSetting(
+            setting_key=req.setting_key, setting_value=req.setting_value, updated_by=user.id,
+        )
+        db.add(setting)
+
+    db.add(AuditLog(
+        user_id=user.id, action="setting_update", resource_type="site_settings",
+        event_metadata={"key": req.setting_key, "value": req.setting_value},
+    ))
+    await db.flush()
+    # Invalidate cache
+    await cache_delete(f"setting:{req.setting_key}")
+    return {"status": "updated", "key": req.setting_key}
+
+
+# ── Public settings endpoint (non-sensitive keys for frontend) ──
+
+@router.get("/public-settings")
+async def get_public_settings(db: AsyncSession = Depends(get_db)):
+    """Returns non-sensitive settings needed by the frontend."""
+    from models import SiteSetting
+    public_keys = ["privy_app_id", "walletconnect_project_id", "site_name", "site_tagline", "mapbox_token"]
+    result = await db.execute(
+        select(SiteSetting).where(SiteSetting.setting_key.in_(public_keys))
+    )
+    settings = result.scalars().all()
+    return {s.setting_key: s.setting_value for s in settings}

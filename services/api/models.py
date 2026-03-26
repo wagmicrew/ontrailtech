@@ -295,3 +295,15 @@ class AuditLog(Base):
     resource_id = Column(String(100), nullable=True)
     event_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Site Settings ──
+
+class SiteSetting(Base):
+    __tablename__ = "site_settings"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    setting_key = Column(String(100), unique=True, nullable=False)
+    setting_value = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

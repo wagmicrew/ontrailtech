@@ -255,3 +255,34 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 INSERT INTO acl_roles (role_name, permissions)
 VALUES ('admin', '{"all": true}')
 ON CONFLICT (role_name) DO NOTHING;
+
+
+-- 7. Site Settings (admin-editable key/value store for app config)
+CREATE TABLE IF NOT EXISTS site_settings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value TEXT NOT NULL,
+    description TEXT,
+    updated_by UUID REFERENCES users(id),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Seed site settings
+INSERT INTO site_settings (setting_key, setting_value, description) VALUES
+    ('privy_app_id', 'cmn7iq1in001u0dl5ttvqs1pr', 'Privy application ID for Web2+Web3 auth'),
+    ('walletconnect_project_id', '75e29a9e66a4a448b52cf0e0945058d6', 'WalletConnect project ID for ConnectKit'),
+    ('base_rpc_url', 'https://mainnet.base.org', 'Base L2 RPC endpoint'),
+    ('mapbox_token', '', 'Mapbox API token for map tiles'),
+    ('tge_threshold', '10', 'ETH threshold for Token Generation Event'),
+    ('bonding_curve_base_price', '0.001', 'Base price for bonding curve'),
+    ('bonding_curve_k', '0.0001', 'K factor for bonding curve steepness'),
+    ('poi_max_per_cell', '10', 'Maximum POIs per H3 grid cell'),
+    ('site_name', 'OnTrail', 'Platform display name'),
+    ('site_tagline', 'Web3 SocialFi for Explorers', 'Platform tagline'),
+    ('privy_jwks_url', 'https://auth.privy.io/api/v1/apps/cmn7iq1in001u0dl5ttvqs1pr/jwks.json', 'Privy JWKS endpoint for JWT verification')
+ON CONFLICT (setting_key) DO NOTHING;
+
+-- Seed AncientOwner role
+INSERT INTO acl_roles (role_name, permissions) VALUES
+    ('ancient_owner', '{"all": true, "super_admin": true, "manage_roles": true}')
+ON CONFLICT (role_name) DO NOTHING;
