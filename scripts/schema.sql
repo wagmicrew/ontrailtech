@@ -279,7 +279,8 @@ INSERT INTO site_settings (setting_key, setting_value, description) VALUES
     ('poi_max_per_cell', '10', 'Maximum POIs per H3 grid cell'),
     ('site_name', 'OnTrail', 'Platform display name'),
     ('site_tagline', 'Web3 SocialFi for Explorers', 'Platform tagline'),
-    ('privy_jwks_url', 'https://auth.privy.io/api/v1/apps/cmn7iq1in001u0dl5ttvqs1pr/jwks.json', 'Privy JWKS endpoint for JWT verification')
+    ('privy_jwks_url', 'https://auth.privy.io/api/v1/apps/cmn7iq1in001u0dl5ttvqs1pr/jwks.json', 'Privy JWKS endpoint for JWT verification'),
+    ('privy_verification_key', 'WY6XcDJmXEVCCftZReGLK4TaBU6NEAdBfkjeUuiWp6TfC', 'Privy client verification key')
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- Seed AncientOwner role

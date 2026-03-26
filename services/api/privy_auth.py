@@ -72,6 +72,7 @@ async def verify_privy_token(token: str, db: AsyncSession) -> dict:
             raise HTTPException(status_code=401, detail="No matching key found")
 
         privy_app_id = await get_setting(db, "privy_app_id") or "cmn7iq1in001u0dl5ttvqs1pr"
+        verification_key = await get_setting(db, "privy_verification_key") or "WY6XcDJmXEVCCftZReGLK4TaBU6NEAdBfkjeUuiWp6TfC"
 
         payload = jwt.decode(
             token,
@@ -79,6 +80,7 @@ async def verify_privy_token(token: str, db: AsyncSession) -> dict:
             algorithms=["ES256"],
             audience=privy_app_id,
             issuer="privy.io",
+            options={"verify_aud": True, "verify_iss": True},
         )
         return payload
     except JWTError as e:
