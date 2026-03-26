@@ -1,0 +1,36 @@
+; Zone file for ontrail.tech
+; Nameservers: ns1.loppio.se, ns2.loppio.se
+; Server IP: 85.208.51.194
+
+$TTL 3600
+@   IN  SOA ns1.loppio.se. admin.ontrail.tech. (
+        2025032601  ; Serial (YYYYMMDDNN)
+        3600        ; Refresh
+        900         ; Retry
+        604800      ; Expire
+        86400       ; Minimum TTL
+    )
+
+; Nameservers
+@       IN  NS  ns1.loppio.se.
+@       IN  NS  ns2.loppio.se.
+
+; A records - all point to same server
+@       IN  A   85.208.51.194
+www     IN  A   85.208.51.194
+app     IN  A   85.208.51.194
+api     IN  A   85.208.51.194
+data    IN  A   85.208.51.194
+mail    IN  A   85.208.51.194
+
+; Wildcard for dynamic runner subdomains
+*       IN  A   85.208.51.194
+
+; MX records for email
+@       IN  MX  10  mail.ontrail.tech.
+
+; SPF record
+@       IN  TXT "v=spf1 a mx ip4:85.208.51.194 ~all"
+
+; DMARC
+_dmarc  IN  TXT "v=DMARC1; p=quarantine; rua=mailto:admin@ontrail.tech"
