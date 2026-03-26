@@ -52,3 +52,14 @@ async def get_runner_profile(username: str, db: AsyncSession = Depends(get_db)):
         wallet_address=user.wallet_address,
         reputation_score=user.reputation_score or 0.0,
     )
+
+
+@router.get("/{user_id}/reputation")
+async def get_reputation(user_id: str, db: AsyncSession = Depends(get_db)):
+    from engines.reputation_engine import calculate_reputation
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    breakdown = await calculate_reputation(db, user.id)
+    return breakdown
