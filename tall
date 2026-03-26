@@ -1,0 +1,30 @@
+     table_name     
+--------------------
+ acl_roles
+ activity_sessions
+ admin_config
+ audit_logs
+ auth_nonces
+ checkins
+ fraud_events
+ friend_shares
+ friends
+ gps_points
+ grid_cells
+ poi_slots
+ pois
+ reputation_events
+ route_nfts
+ route_pois
+ routes
+ runner_tokens
+ steps
+ token_pools
+ token_simulations
+ token_transactions
+ translations
+ user_roles
+ users
+ wallets
+(26 rows)
+

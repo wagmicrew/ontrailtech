@@ -1,0 +1,25 @@
+{
+  "name": "ontrail",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OnTrail Web3 Social-Fi Platform",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "contracts",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "cd services/api && uvicorn main:app --reload --port 8000",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:contracts": "npm run build --workspace=contracts",
+    "test": "npm run test --workspaces --if-present",
+    "test:web": "npm run test --workspace=apps/web",
+    "test:contracts": "npm run test --workspace=contracts",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

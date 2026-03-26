@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "OnTrail",
+    "slug": "ontrail",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "ontrail",
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "OnTrail needs your location to track routes and discover POIs."
+        }
+      ]
+    ],
+    "ios": {
+      "bundleIdentifier": "tech.ontrail.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "OnTrail needs your location to discover nearby POIs.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "OnTrail needs background location to track your routes.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "package": "tech.ontrail.app",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION"]
+    }
+  }
+}
