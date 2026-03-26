@@ -138,3 +138,49 @@ async def get_pool_status(runner_id: str, db: AsyncSession = Depends(get_db)):
         "threshold": str(pool.threshold),
         "ready_for_tge": Decimal(pool.liquidity_pool) >= Decimal(pool.threshold),
     }
+
+
+@router.post("/tge/{runner_id}")
+async def trigger_tge(
+    runner_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger Token Generation Event for a runner."""
+    # Verify runner token exists and is ready
+    result = await db.execute(select(RunnerToken).where(RunnerToken.runner_id == runner_id))
+    runner_token = result.scalar_one_or_none()
+    if not runner_token:
+        raise HTTPException(status_code=404, detail="Runner token not found")
+    if runner_token.status != "tge_ready":
+        raise HTTPException(status_code=403, detail=f"Token status is '{runner_token.status}', must be 'tge_ready'")
+
+    # Check threshold
+    result = await db.execute(select(TokenPool).where(TokenPool.runner_id == runner_id))
+    pool = result.scalar_one_or_none()
+    if not pool or Decimal(pool.liquidity_pool) < Decimal(pool.threshold):
+        current = str(pool.liquidity_pool) if pool else "0"
+        threshold = str(pool.threshold) if pool else "10"
+        raise HTTPException(
+            status_code=403,
+            detail=f"Pool ({current}) has not reached threshold ({threshold})",
+        )
+
+    # Update status
+    runner_token.status = "launched"
+    from datetime import datetime
+    runner_token.tge_date = datetime.utcnow()
+
+    # Record reputation event
+    db.add(ReputationEvent(
+        user_id=runner_id, event_type="token_launch",
+        weight=100.0, event_metadata={"token_name": runner_token.token_name},
+    ))
+    await db.flush()
+
+    return {
+        "status": "launched",
+        "token_name": runner_token.token_name,
+        "token_symbol": runner_token.token_symbol,
+        "tge_date": str(runner_token.tge_date),
+    }

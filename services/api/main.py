@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
 from routers import auth, users, pois, routes, tokens, admin
+from error_handlers import register_error_handlers
+from security import register_security
 
 settings = get_settings()
 
@@ -21,6 +23,9 @@ app.include_router(pois.router, prefix="/poi", tags=["POI"])
 app.include_router(routes.router, prefix="/route", tags=["Routes"])
 app.include_router(tokens.router, prefix="/token", tags=["Tokens"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+
+register_error_handlers(app)
+register_security(app)
 
 
 @app.get("/health")

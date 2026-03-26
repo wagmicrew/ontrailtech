@@ -5,6 +5,7 @@ import Explore from './pages/Explore';
 import RoutesPage from './pages/Routes';
 import Tokens from './pages/Tokens';
 import Profile from './pages/Profile';
+import Admin from './pages/Admin';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/routes" element={<RoutesPage />} />
         <Route path="/tokens" element={<Tokens />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/admin" element={<Admin />} />
       </Route>
     </Routes>
   );
