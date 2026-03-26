@@ -229,7 +229,7 @@ class ReputationEvent(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     event_type = Column(String(50), nullable=False)
     weight = Column(Float, nullable=False)
-    metadata = Column(JSON, nullable=True)
+    event_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -240,7 +240,7 @@ class FraudEvent(Base):
     session_id = Column(UUID(as_uuid=True), ForeignKey("activity_sessions.id"), nullable=True)
     event_type = Column(String(50), nullable=False)
     severity = Column(String(20), nullable=False)
-    metadata = Column(JSON, nullable=True)
+    event_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -293,5 +293,5 @@ class AuditLog(Base):
     action = Column(String(100), nullable=False)
     resource_type = Column(String(50), nullable=True)
     resource_id = Column(String(100), nullable=True)
-    metadata = Column(JSON, nullable=True)
+    event_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -175,7 +175,7 @@ async def complete_route(
     db.add(ReputationEvent(
         user_id=user.id, event_type="route_completed",
         weight=DIFFICULTY_WEIGHTS.get(route.difficulty, 1.0),
-        metadata={"route_id": str(route.id)},
+        event_metadata={"route_id": str(route.id)},
     ))
     await db.flush()
 

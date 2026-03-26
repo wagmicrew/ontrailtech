@@ -42,7 +42,7 @@ async def update_config(
         db.add(config)
 
     db.add(AuditLog(user_id=user.id, action="config_update", resource_type="admin_config",
-                     metadata={"key": req.config_key, "value": req.config_value}))
+                     event_metadata={"key": req.config_key, "value": req.config_value}))
     await db.flush()
     return {"status": "updated", "key": req.config_key}
 
@@ -106,7 +106,7 @@ async def get_audit_logs(
         {
             "id": str(log.id), "user_id": str(log.user_id) if log.user_id else None,
             "action": log.action, "resource_type": log.resource_type,
-            "metadata": log.metadata, "created_at": str(log.created_at),
+            "metadata": log.event_metadata, "created_at": str(log.created_at),
         }
         for log in logs
     ]

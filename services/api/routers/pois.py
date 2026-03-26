@@ -132,7 +132,7 @@ async def mint_poi(
     db.add(ReputationEvent(
         user_id=user.id, event_type="poi_minted",
         weight=RARITY_WEIGHTS.get(slot.rarity, 1.0),
-        metadata={"poi_id": str(poi.id), "rarity": slot.rarity},
+        event_metadata={"poi_id": str(poi.id), "rarity": slot.rarity},
     ))
     await db.flush()
 
