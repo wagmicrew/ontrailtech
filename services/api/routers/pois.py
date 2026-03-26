@@ -9,6 +9,7 @@ import h3
 from database import get_db
 from models import POI, GridCell, POISlot, ReputationEvent, User
 from dependencies import get_current_user
+from rate_limit import rate_limit_poi_mint
 
 router = APIRouter()
 
@@ -100,6 +101,8 @@ async def mint_poi(
         raise HTTPException(status_code=400, detail="POI name must be 3-100 characters")
     if not (-90 <= req.latitude <= 90) or not (-180 <= req.longitude <= 180):
         raise HTTPException(status_code=400, detail="Invalid coordinates")
+
+    await rate_limit_poi_mint(str(user.id))
 
     cell = await get_or_create_grid_cell(db, req.latitude, req.longitude)
 

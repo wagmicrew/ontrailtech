@@ -270,7 +270,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Validate wallet addresses and signatures
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.7_
 
-  - [ ] 9.2 Implement rate limiting for authentication
+  - [x] 9.2 Implement rate limiting for authentication
     - Limit authentication attempts to 5 per minute per IP
     - Return HTTP 429 when rate limit exceeded
     - _Requirements: 14.4, 14.5_
@@ -282,7 +282,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Test token refresh logic
     - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 10. Implement backend API user endpoints
+- [x] 10. Implement backend API user endpoints
   - [x] 10.1 Create user profile endpoints
     - Implement GET /users/{user_id} to retrieve user profile
     - Implement PUT /users/{user_id} to update profile
@@ -320,7 +320,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Return error if no slots available with nearby alternatives
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 21.1_
 
-  - [ ] 11.3 Implement POI minting rate limiting
+  - [x] 11.3 Implement POI minting rate limiting
     - Limit POI mints to 10 per hour per user
     - Return HTTP 429 when limit exceeded
     - _Requirements: 3.10, 14.3_
@@ -420,7 +420,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
   - Verify database schema is correctly implemented
   - Ensure all tests pass, ask the user if questions arise
 
-- [ ] 15. Implement Solidity smart contracts
+- [x] 15. Implement Solidity smart contracts
   - [x] 15.1 Set up Hardhat development environment
     - Initialize contracts/ directory with Hardhat
     - Install OpenZeppelin contracts library
@@ -541,7 +541,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Use local Hardhat network for testing
     - _Requirements: 3.4, 6.6, 10.5, 11.4_
 
-- [ ] 17. Implement admin configuration endpoints
+- [x] 17. Implement admin configuration endpoints
   - [x] 17.1 Create admin authentication middleware
     - Implement require_admin dependency
     - Verify user has admin role from user_roles table
@@ -587,7 +587,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
   - Test end-to-end flows: POI mint, route completion, token trading, TGE
   - Ensure all tests pass, ask the user if questions arise
 
-- [ ] 19. Set up Nginx reverse proxy and domain routing
+- [x] 19. Set up Nginx reverse proxy and domain routing
   - [x] 19.1 Install and configure Nginx
     - Install Nginx 1.24+ on server
     - Create base nginx.conf with worker settings
@@ -625,7 +625,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Set up i18next for internationalization
     - _Requirements: 19.1, 19.2_
 
-  - [ ] 20.2 Create authentication flow
+  - [x] 20.2 Create authentication flow
     - Implement wallet connection with wagmi
     - Create login page with MetaMask integration
     - Implement challenge-response authentication flow
@@ -633,7 +633,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Create authentication context provider
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ] 20.3 Create map explorer UI
+  - [x] 20.3 Create map explorer UI
     - Integrate Mapbox for map rendering
     - Display user's current location
     - Show nearby POI markers with rarity indicators
@@ -641,7 +641,7 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Add search and filter controls
     - _Requirements: 2.3, 2.5, 2.6_
 
-  - [ ] 20.4 Create POI minting interface
+  - [x] 20.4 Create POI minting interface
     - Create POI mint form with name and description inputs
     - Show current location on map
     - Display available slot information
@@ -649,21 +649,21 @@ This implementation plan breaks down the OnTrail platform into discrete, actiona
     - Display error messages for no available slots
     - _Requirements: 3.1, 3.8, 21.1_
 
-  - [ ] 20.5 Create route explorer and creation UI
+  - [x] 20.5 Create route explorer and creation UI
     - Display list of available routes with filters
     - Show route details with POI list and map visualization
     - Create route creation interface with POI selection
     - Calculate and display route distance and difficulty
     - _Requirements: 5.1, 5.2, 5.4_
 
-  - [ ] 20.6 Create runner profile pages
+  - [x] 20.6 Create runner profile pages
     - Display runner stats: POIs owned, routes completed, reputation score
     - Show reputation breakdown chart
     - Display owned POI NFTs and Route NFTs
     - Show token information if launched
     - _Requirements: 8.8_
 
-  - [ ] 20.7 Create token dashboard
+  - [x] 20.7 Create token dashboard
     - Display runner token information and bonding curve chart
     - Show current price and supply
     - Implement buy/sell share interface

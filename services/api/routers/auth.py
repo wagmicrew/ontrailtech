@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ from web3 import Web3
 from database import get_db
 from config import get_settings
 from models import User, AuthNonce
+from rate_limit import rate_limit_auth
 
 router = APIRouter()
 settings = get_settings()
@@ -61,7 +62,8 @@ async def get_challenge(req: ChallengeRequest, db: AsyncSession = Depends(get_db
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    await rate_limit_auth(request)
     # Verify nonce exists and is unused
     result = await db.execute(
         select(AuthNonce).where(
