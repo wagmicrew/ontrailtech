@@ -11,7 +11,7 @@ import App from './App';
 import './index.css';
 import './i18n';
 
-const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID || 'clxxxxxxxxxxxxxxxxx';
+const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID || 'cmn7iq1in001u0dl5ttvqs1pr';
 
 const config = createConfig(
   getDefaultConfig({
@@ -20,7 +20,7 @@ const config = createConfig(
       [base.id]: http(),
       [baseSepolia.id]: http(),
     },
-    walletConnectProjectId: import.meta.env.VITE_WC_PROJECT_ID || '',
+    walletConnectProjectId: import.meta.env.VITE_WC_PROJECT_ID || '75e29a9e66a4a448b52cf0e0945058d6',
     appName: 'OnTrail',
     appDescription: 'Web3 SocialFi for Explorers',
     appUrl: 'https://ontrail.tech',
