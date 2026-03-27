@@ -1,18 +1,23 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from config import get_settings
-from routers import auth, users, pois, routes, tokens, admin, onboarding, friendpass, identity, referrals, runners, graph, aura
+from routers import auth, users, pois, routes, tokens, admin, onboarding, friendpass, identity, referrals, runners, graph, aura, store
 from error_handlers import register_error_handlers
 from security import register_security
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+media_root = Path(__file__).resolve().parent / "media"
+media_root.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="OnTrail API", version="0.1.0", description="OnTrail Web3 Social-Fi Platform API")
+app.mount("/media", StaticFiles(directory=media_root), name="media")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +42,7 @@ app.include_router(referrals.router, prefix="/referrals", tags=["Referrals"])
 app.include_router(runners.router, prefix="/runners", tags=["Runners"])
 app.include_router(graph.router, prefix="/graph", tags=["Graph"])
 app.include_router(aura.router, prefix="/aura", tags=["Aura"])
+app.include_router(store.router, prefix="/store", tags=["Store"])
 
 register_error_handlers(app)
 register_security(app)

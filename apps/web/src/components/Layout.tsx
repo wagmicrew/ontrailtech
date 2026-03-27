@@ -40,7 +40,7 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { t } = useTranslation();
-  const { isConnected, isLoading, wallet, username, email, isAdmin, isAncientOwner, login, logout } = useAuth();
+  const { isConnected, isLoading, wallet, username, email, avatarUrl, isAdmin, isAncientOwner, login, logout } = useAuth();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -76,12 +76,13 @@ export default function Layout() {
           <div className="hidden md:flex items-center gap-1 ml-8">
             {navItems.map(({ path, label, icon }) => (
               <Link key={path} to={path}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium leading-none transition-all ${
                   location.pathname === path
                     ? 'bg-green-50 text-green-700'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}>
-                <span className="mr-1.5 inline-flex">{icon}</span>{label.startsWith('nav.') ? t(label) : label}
+                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+                <span className="translate-y-[1px]">{label.startsWith('nav.') ? t(label) : label}</span>
               </Link>
             ))}
           </div>
@@ -96,7 +97,9 @@ export default function Layout() {
                 <button onClick={() => setMenuOpen(!menuOpen)}
                   className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm ring-2 ring-white shadow-md hover:ring-green-300 transition-all"
                   style={{ backgroundColor: avatarColor }}>
-                  {avatarLetter}
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Profile avatar" className="w-full h-full rounded-full object-cover" />
+                  ) : avatarLetter}
                 </button>
 
                 <AnimatePresence>
@@ -113,7 +116,9 @@ export default function Layout() {
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
                             style={{ backgroundColor: avatarColor }}>
-                            {avatarLetter}
+                            {avatarUrl ? (
+                              <img src={avatarUrl} alt="Profile avatar" className="w-full h-full rounded-full object-cover" />
+                            ) : avatarLetter}
                           </div>
                           <div className="min-w-0">
                             <p className="font-semibold text-sm truncate">{username || 'Runner'}</p>
@@ -236,9 +241,9 @@ export default function Layout() {
 function MenuLink({ to, icon, label, onClick }: { to: string; icon: ReactNode; label: string; onClick: () => void }) {
   return (
     <Link to={to} onClick={onClick}
-      className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition">
-      <span className="inline-flex text-gray-500">{icon}</span>
-      <span>{label}</span>
+      className="flex items-center gap-3 px-3 py-2 text-sm leading-none text-gray-700 hover:bg-gray-50 rounded-lg transition">
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-gray-500">{icon}</span>
+      <span className="translate-y-[1px]">{label}</span>
     </Link>
   );
 }

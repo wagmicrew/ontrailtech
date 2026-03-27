@@ -1,6 +1,8 @@
 import re
+import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from passlib.hash import bcrypt
@@ -12,10 +14,10 @@ import logging
 from database import get_db
 from models import (
     User, RunnerToken, FriendShareModel, TokenTransaction,
-    ReputationEvent, TokenPool, AuraIndex,
+    ReputationEvent, TokenPool, AuraIndex, Step, StorePurchase,
 )
 from dependencies import get_current_user, get_user_roles
-from redis_client import cache_get, cache_set
+from redis_client import cache_delete, cache_get, cache_set
 from web3_client import get_friend_shares_client
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,14 @@ router = APIRouter()
 # Cache TTL constants
 TTL_RUNNER_PROFILE = 60   # 60s for full profile
 TTL_FRIENDPASS_PRICE = 7  # 7s for FriendPass price (within 5-10s window)
+MEDIA_ROOT = Path(__file__).resolve().parent.parent / "media"
+MEDIA_URL_PREFIX = "/media"
+MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
 
 # FriendPass config defaults
 FRIENDPASS_BASE_PRICE_ETH = 0.001   # 0.001 ETH base
@@ -60,6 +70,8 @@ class RunnerProfileData(BaseModel):
     id: str
     username: str
     avatarUrl: Optional[str]
+    headerImageUrl: Optional[str] = None
+    bio: Optional[str] = None
     reputationScore: float
     rank: int
     tokenStatus: str
@@ -81,9 +93,13 @@ class RunnerProfileData(BaseModel):
 
 class UserProfile(BaseModel):
     id: str
-    username: str
-    wallet_address: str
+    username: Optional[str]
+    wallet_address: Optional[str]
     reputation_score: float
+    avatar_url: Optional[str] = None
+    header_image_url: Optional[str] = None
+    bio: Optional[str] = None
+    location: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -92,6 +108,9 @@ class UserProfile(BaseModel):
 class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
+    bio: Optional[str] = None
+    location: Optional[str] = None
+    preferred_reward_wallet: Optional[str] = None
 
 
 class MeResponse(BaseModel):
@@ -100,9 +119,18 @@ class MeResponse(BaseModel):
     email: Optional[str]
     wallet_address: Optional[str]
     avatar_url: Optional[str]
+    header_image_url: Optional[str]
+    bio: Optional[str]
+    location: Optional[str]
+    preferred_reward_wallet: Optional[str]
     reputation_score: float
     roles: list[str]
     onboarding_completed: bool
+    step_balance: int
+    profile_image_upload_credits: int
+    header_image_upload_credits: int
+    ai_avatar_credits: int
+    profile_visibility_boost_until: Optional[str]
 
 
 class AvatarRequest(BaseModel):
@@ -125,6 +153,17 @@ def _validate_password(password: str) -> bool:
     if not re.search(r"\d", password):
         return False
     return True
+
+
+def _validate_wallet_address(wallet_address: Optional[str]) -> Optional[str]:
+    if wallet_address is None:
+        return None
+    normalized = wallet_address.strip().lower()
+    if normalized == "":
+        return None
+    if not re.fullmatch(r"0x[a-f0-9]{40}", normalized):
+        raise HTTPException(status_code=422, detail="Wallet address must be a valid 0x-prefixed address")
+    return normalized
 
 
 # ── Helpers ──
@@ -190,6 +229,43 @@ async def _get_runner_rank(db: AsyncSession, user_id) -> int:
     return int(higher_count) + 1
 
 
+async def _get_step_balance(db: AsyncSession, user_id) -> int:
+    total_steps = await db.scalar(
+        select(func.coalesce(func.sum(Step.step_count), 0)).where(Step.user_id == user_id)
+    ) or 0
+    spent_steps = await db.scalar(
+        select(func.coalesce(func.sum(StorePurchase.step_cost), 0)).where(
+            StorePurchase.user_id == user_id,
+            StorePurchase.status != "cancelled",
+        )
+    ) or 0
+    return max(int(total_steps) - int(spent_steps), 0)
+
+
+async def _invalidate_runner_cache(user: User, previous_username: Optional[str] = None) -> None:
+    usernames = {value.lower() for value in [user.username, previous_username] if value}
+    for username in usernames:
+        await cache_delete(f"runner_profile:{username}")
+
+
+async def _save_uploaded_image(user_id, upload: UploadFile, media_type: str) -> str:
+    content_type = upload.content_type or ""
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="Only PNG, JPEG, and WEBP images are supported")
+
+    content = await upload.read()
+    if len(content) > MAX_IMAGE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds 5MB limit")
+
+    suffix = ALLOWED_IMAGE_TYPES[content_type]
+    target_dir = MEDIA_ROOT / str(user_id) / media_type
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{suffix}"
+    target_path = target_dir / filename
+    target_path.write_bytes(content)
+    return f"{MEDIA_URL_PREFIX}/{user_id}/{media_type}/{filename}"
+
+
 async def _build_activity_feed(db: AsyncSession, runner_id) -> list[ActivityFeedItem]:
     """Build activity feed: recent joins, FriendPass buys, tips — last 1h, max 10."""
     cutoff = datetime.utcnow() - timedelta(hours=1)
@@ -248,16 +324,70 @@ async def get_me(
 ):
     """Return authenticated user profile."""
     roles = await get_user_roles(user.id, db)
+    step_balance = await _get_step_balance(db, user.id)
     return MeResponse(
         id=str(user.id),
         username=user.username,
         email=user.email,
         wallet_address=user.wallet_address,
         avatar_url=user.avatar_url,
+        header_image_url=user.header_image_url,
+        bio=user.bio,
+        location=user.location,
+        preferred_reward_wallet=user.preferred_reward_wallet,
         reputation_score=user.reputation_score or 0.0,
         roles=roles,
         onboarding_completed=user.onboarding_completed or False,
+        step_balance=step_balance,
+        profile_image_upload_credits=user.profile_image_upload_credits or 0,
+        header_image_upload_credits=user.header_image_upload_credits or 0,
+        ai_avatar_credits=user.ai_avatar_credits or 0,
+        profile_visibility_boost_until=user.profile_visibility_boost_until.isoformat() if user.profile_visibility_boost_until else None,
     )
+
+
+@router.patch("/me/profile", response_model=MeResponse)
+async def update_me_profile(
+    req: UpdateProfileRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    previous_username = user.username
+
+    if req.username is not None:
+        normalized_username = req.username.strip().lower()
+        if normalized_username:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,19}", normalized_username):
+                raise HTTPException(status_code=422, detail="Username must use lowercase letters, numbers, or hyphens")
+            result = await db.execute(
+                select(User.id).where(User.username == normalized_username, User.id != user.id)
+            )
+            if result.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail="Username is already taken")
+            user.username = normalized_username
+
+    if req.email is not None:
+        normalized_email = req.email.strip().lower() or None
+        if normalized_email:
+            existing = await db.execute(
+                select(User.id).where(User.email == normalized_email, User.id != user.id)
+            )
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail="Email is already in use")
+        user.email = normalized_email
+
+    if req.bio is not None:
+        user.bio = req.bio.strip()[:500] or None
+
+    if req.location is not None:
+        user.location = req.location.strip()[:120] or None
+
+    if req.preferred_reward_wallet is not None:
+        user.preferred_reward_wallet = _validate_wallet_address(req.preferred_reward_wallet)
+
+    await db.flush()
+    await _invalidate_runner_cache(user, previous_username)
+    return await get_me(user=user, db=db)
 
 
 @router.post("/me/avatar")
@@ -269,7 +399,48 @@ async def update_avatar(
     """Update authenticated user's avatar URL."""
     user.avatar_url = req.avatar_url
     await db.flush()
+    await _invalidate_runner_cache(user)
     return {"avatar_url": user.avatar_url}
+
+
+@router.post("/me/media/profile-image")
+async def upload_profile_image(
+    image: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if user.avatar_url and user.avatar_url.startswith(MEDIA_URL_PREFIX):
+        if (user.profile_image_upload_credits or 0) <= 0:
+            raise HTTPException(status_code=400, detail="Buy a profile image change in the store before replacing your custom image")
+        user.profile_image_upload_credits -= 1
+
+    user.avatar_url = await _save_uploaded_image(user.id, image, "profile")
+    await db.flush()
+    await _invalidate_runner_cache(user)
+    return {
+        "avatar_url": user.avatar_url,
+        "remaining_profile_image_upload_credits": user.profile_image_upload_credits or 0,
+    }
+
+
+@router.post("/me/media/header-image")
+async def upload_header_image(
+    image: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if user.header_image_url and user.header_image_url.startswith(MEDIA_URL_PREFIX):
+        if (user.header_image_upload_credits or 0) <= 0:
+            raise HTTPException(status_code=400, detail="Buy a header image upload in the store before replacing your custom header")
+        user.header_image_upload_credits -= 1
+
+    user.header_image_url = await _save_uploaded_image(user.id, image, "header")
+    await db.flush()
+    await _invalidate_runner_cache(user)
+    return {
+        "header_image_url": user.header_image_url,
+        "remaining_header_image_upload_credits": user.header_image_upload_credits or 0,
+    }
 
 
 @router.post("/me/change-password")
@@ -417,7 +588,9 @@ async def get_runner_profile_aggregated(
     profile = RunnerProfileData(
         id=str(user.id),
         username=user.username,
-        avatarUrl=None,  # avatar system TBD (Task 14)
+        avatarUrl=user.avatar_url,
+        headerImageUrl=user.header_image_url,
+        bio=user.bio,
         reputationScore=round(user.reputation_score or 0.0, 2),
         rank=rank,
         tokenStatus=token_status,
@@ -460,6 +633,10 @@ async def get_user(user_id: str, db: AsyncSession = Depends(get_db)):
         username=user.username,
         wallet_address=user.wallet_address,
         reputation_score=user.reputation_score or 0.0,
+        avatar_url=user.avatar_url,
+        header_image_url=user.header_image_url,
+        bio=user.bio,
+        location=user.location,
     )
 
 

@@ -7,9 +7,18 @@ export interface AuthUser {
   email: string | null;
   wallet_address: string | null;
   avatar_url: string | null;
+  header_image_url?: string | null;
+  bio?: string | null;
+  location?: string | null;
+  preferred_reward_wallet?: string | null;
   reputation_score: number;
   roles: string[];
   onboarding_completed: boolean;
+  step_balance?: number;
+  profile_image_upload_credits?: number;
+  header_image_upload_credits?: number;
+  ai_avatar_credits?: number;
+  profile_visibility_boost_until?: string | null;
 }
 
 export interface AuthResponse {
@@ -48,9 +57,11 @@ async function attemptTokenRefresh(): Promise<string | null> {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY);
+  const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+    ...((options.headers as Record<string, string> | undefined) || {}),
   };
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
@@ -67,8 +78,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (newToken) {
       // Retry original request with new token
       const retryHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
         Authorization: `Bearer ${newToken}`,
+        ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+        ...((options.headers as Record<string, string> | undefined) || {}),
       };
       const retryRes = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders });
       if (!retryRes.ok) {
@@ -167,11 +179,41 @@ export const api = {
   // --- User profile endpoints ---
   getMe: () => request<AuthUser>('/users/me'),
 
+  updateMyProfile: (payload: {
+    username?: string;
+    email?: string;
+    bio?: string;
+    location?: string;
+    preferred_reward_wallet?: string;
+  }) =>
+    request<AuthUser>('/users/me/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
   updateAvatar: (avatarUrl: string) =>
     request<{ message: string }>('/users/me/avatar', {
       method: 'POST',
       body: JSON.stringify({ avatar_url: avatarUrl }),
     }),
+
+  uploadProfileImage: (file: File) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    return request<{ avatar_url: string; remaining_profile_image_upload_credits: number }>('/users/me/media/profile-image', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  uploadHeaderImage: (file: File) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    return request<{ header_image_url: string; remaining_header_image_upload_credits: number }>('/users/me/media/header-image', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ message: string }>('/users/me/change-password', {
@@ -270,6 +312,14 @@ export const api = {
   getGraphNode: (username: string) => request<any>(`/graph/node/${username}`),
   getGraphNeighbors: (username: string) => request<any>(`/graph/neighbors/${username}`),
   getGraphTrending: () => request<any>('/graph/trending'),
+
+  // --- Store ---
+  getStoreCatalog: () => request<any>('/store/catalog'),
+  purchaseStoreItem: (itemSlug: string, fulfillmentWallet?: string) =>
+    request<any>('/store/purchase', {
+      method: 'POST',
+      body: JSON.stringify({ item_slug: itemSlug, fulfillment_wallet: fulfillmentWallet }),
+    }),
 
   // --- Admin Settings ---
   getAllSettings: () => request<any[]>('/admin/settings'),

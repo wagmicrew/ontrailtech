@@ -21,6 +21,7 @@ interface AuthState {
   authModalOpen: boolean;
   authModalDefaultTab: 'email' | 'google' | 'wallet';
   handleAuthSuccess: (response: AuthResponse) => void;
+  refreshMe: () => Promise<void>;
 }
 
 const TOKEN_KEY = 'ontrail_token';
@@ -44,6 +45,7 @@ const AuthContext = createContext<AuthState>({
   authModalOpen: false,
   authModalDefaultTab: 'email',
   handleAuthSuccess: () => {},
+  refreshMe: async () => {},
 });
 
 function hydrateFromUser(
@@ -187,6 +189,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthModalOpen(true);
   }, []);
 
+  const refreshMe = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+    try {
+      const user = await api.getMe();
+      hydrateFromUser(user, setters);
+    } catch {
+      clearAuthState(setters);
+    }
+  }, []);
+
   const isAdmin = roles.includes('admin') || roles.includes('ancient_owner');
   const isAncientOwner = roles.includes('ancient_owner');
 
@@ -209,6 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authModalOpen,
       authModalDefaultTab,
       handleAuthSuccess,
+      refreshMe,
     }}>
       {children}
       <AuthModal
