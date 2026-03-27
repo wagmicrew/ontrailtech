@@ -165,6 +165,59 @@ async def update_setting(
     return {"status": "updated", "key": req.setting_key}
 
 
+# ── Aura Config ──
+
+AURA_CONFIG_KEYS = {
+    "nft_multiplier",
+    "aura_boost_factor",
+    "max_aura_boost",
+    "max_aura_multiplier",
+    "max_aura_factor",
+    "ancient_multiplier",
+    "min_reputation_threshold",
+    "max_contribution_percentile",
+}
+
+
+class UpdateAuraConfigRequest(BaseModel):
+    value: Any
+
+
+@router.put("/aura-config/{config_key}")
+async def update_aura_config(
+    config_key: str,
+    req: UpdateAuraConfigRequest,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if config_key not in AURA_CONFIG_KEYS:
+        raise HTTPException(status_code=400, detail=f"Unknown aura config key: {config_key}")
+
+    from redis_client import cache_delete
+
+    result = await db.execute(select(AdminConfig).where(AdminConfig.config_key == config_key))
+    config = result.scalar_one_or_none()
+    if config:
+        config.config_value = req.value
+        config.updated_by = user.id
+    else:
+        config = AdminConfig(config_key=config_key, config_value=req.value, updated_by=user.id)
+        db.add(config)
+
+    db.add(AuditLog(
+        user_id=user.id,
+        action="aura_config_updated",
+        resource_type="admin_config",
+        resource_id=config_key,
+        event_metadata={"key": config_key, "value": req.value},
+    ))
+    await db.flush()
+
+    await cache_delete("aura:config")
+
+    return {"status": "updated", "key": config_key, "value": req.value}
+
+
 # ── Public settings endpoint (non-sensitive keys for frontend) ──
 
 @router.get("/public-settings")

@@ -28,7 +28,7 @@ export default function ShareableCard({
     if (!cardRef.current) return;
     try {
       const { default: html2canvas } = await import('html2canvas');
-      const canvas = await html2canvas(cardRef.current, { backgroundColor: null, scale: 2 });
+      const canvas = await html2canvas(cardRef.current, { backgroundColor: null, scale: 2 } as any);
       const link = document.createElement('a');
       link.download = `ontrail-${username || 'card'}.png`;
       link.href = canvas.toDataURL('image/png');

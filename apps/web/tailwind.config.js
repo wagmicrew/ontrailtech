@@ -14,6 +14,17 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
+      keyframes: {
+        'fade-in-out': {
+          '0%': { opacity: '0', transform: 'translateX(-50%) translateY(4px)' },
+          '10%': { opacity: '1', transform: 'translateX(-50%) translateY(0)' },
+          '80%': { opacity: '1', transform: 'translateX(-50%) translateY(0)' },
+          '100%': { opacity: '0', transform: 'translateX(-50%) translateY(-4px)' },
+        },
+      },
+      animation: {
+        'fade-in-out': 'fade-in-out 3s ease-in-out forwards',
+      },
     },
   },
   plugins: [],

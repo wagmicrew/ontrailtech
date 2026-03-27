@@ -12,7 +12,7 @@ import logging
 from database import get_db
 from models import (
     User, RunnerToken, FriendShareModel, TokenTransaction,
-    ReputationEvent, TokenPool,
+    ReputationEvent, TokenPool, AuraIndex,
 )
 from dependencies import get_current_user, get_user_roles
 from redis_client import cache_get, cache_set
@@ -66,6 +66,17 @@ class RunnerProfileData(BaseModel):
     friendPass: FriendPassInfo
     stats: RunnerStats
     activityFeed: list[ActivityFeedItem]
+    # Boost state
+    is_boosted: bool = False
+    is_golden_boosted: bool = False
+    boost_expires_at: Optional[str] = None
+    # Activity counts for rings
+    poi_count: int = 0
+    route_count: int = 0
+    # Aura data
+    auraLevel: str = "None"
+    ancientSupporterCount: int = 0
+    totalAura: str = "0"
 
 
 class UserProfile(BaseModel):
@@ -360,6 +371,49 @@ async def get_runner_profile_aggregated(
     # Activity feed
     activity_feed = await _build_activity_feed(db, runner_id)
 
+    # Active boosts (within 24 hours)
+    boost_cutoff = datetime.utcnow() - timedelta(hours=24)
+    boost_result = await db.execute(
+        select(ReputationEvent)
+        .where(
+            ReputationEvent.user_id == runner_id,
+            ReputationEvent.event_type == "boost",
+            ReputationEvent.created_at >= boost_cutoff,
+        )
+        .order_by(ReputationEvent.created_at.desc())
+        .limit(20)
+    )
+    boost_events = boost_result.scalars().all()
+    is_boosted = len(boost_events) > 0
+    is_golden_boosted = any((e.event_metadata or {}).get("golden") for e in boost_events)
+    boost_expires_at = None
+    if boost_events:
+        latest = max(boost_events, key=lambda e: e.created_at)
+        boost_expires_at = (latest.created_at + timedelta(hours=24)).isoformat()
+
+    # POI and route counts for activity rings
+    poi_count = await db.scalar(
+        select(func.count(ReputationEvent.id)).where(
+            ReputationEvent.user_id == runner_id,
+            ReputationEvent.event_type == "poi_minted",
+        )
+    ) or 0
+    route_count = await db.scalar(
+        select(func.count(ReputationEvent.id)).where(
+            ReputationEvent.user_id == runner_id,
+            ReputationEvent.event_type == "route_completed",
+        )
+    ) or 0
+
+    # Aura data
+    aura_result = await db.execute(
+        select(AuraIndex).where(AuraIndex.runner_id == runner_id)
+    )
+    aura_row = aura_result.scalar_one_or_none()
+    aura_level = aura_row.aura_level if aura_row else "None"
+    ancient_supporter_count = aura_row.ancient_supporter_count if aura_row else 0
+    total_aura = str(aura_row.total_aura) if aura_row else "0"
+
     profile = RunnerProfileData(
         id=str(user.id),
         username=user.username,
@@ -380,6 +434,14 @@ async def get_runner_profile_aggregated(
             tokenProgress=token_progress,
         ),
         activityFeed=activity_feed,
+        is_boosted=is_boosted,
+        is_golden_boosted=is_golden_boosted,
+        boost_expires_at=boost_expires_at,
+        poi_count=int(poi_count),
+        route_count=int(route_count),
+        auraLevel=aura_level,
+        ancientSupporterCount=ancient_supporter_count,
+        totalAura=total_aura,
     )
 
     # Cache full profile (60s TTL) — exclude price_data which has its own TTL

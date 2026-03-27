@@ -22,9 +22,17 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)
     wallet_address = Column(String(42), unique=True, nullable=True, index=True)
     avatar_url = Column(String(500), nullable=True)
+    header_image_url = Column(String(500), nullable=True)
+    bio = Column(Text, nullable=True)
+    location = Column(String(120), nullable=True)
+    preferred_reward_wallet = Column(String(42), nullable=True)
     google_id = Column(String(255), unique=True, nullable=True)
     onboarding_completed = Column(Boolean, default=False)
     reputation_score = Column(Float, default=0.0)
+    profile_visibility_boost_until = Column(DateTime, nullable=True)
+    profile_image_upload_credits = Column(Integer, nullable=False, default=0)
+    header_image_upload_credits = Column(Integer, nullable=False, default=0)
+    ai_avatar_credits = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -448,4 +456,38 @@ class InfluenceEdge(Base):
 
     __table_args__ = (
         Index("ix_influence_edges_from_to", "from_user_id", "to_runner_id"),
+    )
+
+
+# ── Store ──
+
+class StoreItem(Base):
+    __tablename__ = "store_items"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=False)
+    item_type = Column(String(50), nullable=False)
+    step_cost = Column(Integer, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    fulfillment_type = Column(String(30), nullable=False, default="instant")
+    item_metadata = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StorePurchase(Base):
+    __tablename__ = "store_purchases"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    store_item_id = Column(UUID(as_uuid=True), ForeignKey("store_items.id"), nullable=False)
+    step_cost = Column(Integer, nullable=False)
+    status = Column(String(30), nullable=False, default="completed")
+    fulfillment_wallet = Column(String(42), nullable=True)
+    purchase_metadata = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_store_purchases_user_created", "user_id", "created_at"),
     )

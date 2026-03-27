@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import ReputationAura, { type AuraLevel } from '../components/ReputationAura';
+import AuraIndicator from '../components/AuraIndicator';
 
 export default function Profile() {
   const { isConnected, userId, wallet } = useAuth();
@@ -61,6 +62,11 @@ export default function Profile() {
               <p className="text-xs text-gray-400 mt-1">
                 {profile.username}.ontrail.tech
               </p>
+              {userId && (
+                <AuraIndicator runnerId={userId}>
+                  {null}
+                </AuraIndicator>
+              )}
             </div>
           </div>
         </div>

@@ -218,10 +218,24 @@ async def request_otp(
     email = req.email.strip().lower()
     await rate_limit_otp(email)
 
-    # Generate OTP (always return 200 for anti-enumeration)
-    await otp_service.generate_otp(email, purpose="login")
-    # TODO: send email with OTP code in production
-    return {"message": "If this email is registered, a code has been sent."}
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        is_new_user = False
+        await otp_service.generate_otp(email, purpose="login")
+    else:
+        # Auto-create passwordless account on first contact
+        user = User(email=email)
+        db.add(user)
+        await db.flush()
+        is_new_user = True
+        await otp_service.generate_otp(email, purpose="login", email_purpose="welcome")
+
+    return {
+        "message": "A verification code has been sent to your email.",
+        "is_new_user": is_new_user,
+    }
 
 
 @router.post("/verify-otp", response_model=AuthResponse)

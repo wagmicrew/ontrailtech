@@ -1,10 +1,15 @@
 """Reputation Engine - weighted reputation scoring based on activity and network."""
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from models import (
-    User, POI, RouteNFT, Friend, RunnerToken, ReputationEvent, AdminConfig
+    User, POI, RouteNFT, Friend, RunnerToken, ReputationEvent, AdminConfig,
+    AncientHolder, AuraContribution, Wallet,
 )
 from redis_client import cache_get, cache_set, TTL_REP_WEIGHTS
+from engines.aura_engine import enqueue_recalculation, get_reputation_aura_factor, get_aura_config
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_WEIGHTS = {
     "poi_weight": 10.0,
@@ -101,11 +106,88 @@ async def record_reputation_event(
         breakdown = await calculate_reputation(db, user_id)
         new_score = breakdown["total"]
 
+        # Apply aura factor: amplify reputation gain for runners with non-zero aura
+        # (Requirement 7.1, 7.2)
+        try:
+            aura_factor = await get_reputation_aura_factor(db, user_id)
+            if aura_factor > 0:
+                # Multiply the gain (delta) by (1 + auraFactor)
+                gain = new_score - old_score
+                if gain > 0:
+                    amplified_gain = gain * float(1 + aura_factor)
+                    new_score = old_score + amplified_gain
+
+            # Apply ancientMultiplier for runners who are also Ancient holders
+            # (Requirement 7.3)
+            wallet_result_anc = await db.execute(
+                select(Wallet.wallet_address).where(Wallet.user_id == user_id)
+            )
+            wallet_addrs = [r[0] for r in wallet_result_anc.all()]
+            is_ancient_holder = False
+            if wallet_addrs:
+                anc_count = await db.scalar(
+                    select(func.count(AncientHolder.id)).where(
+                        AncientHolder.wallet_address.in_(wallet_addrs),
+                        AncientHolder.is_active == True,  # noqa: E712
+                    )
+                )
+                is_ancient_holder = (anc_count or 0) > 0
+
+            if is_ancient_holder:
+                config = await get_aura_config(db)
+                ancient_multiplier = float(config.get("ancient_multiplier", 1.2))
+                new_score = new_score * ancient_multiplier
+        except Exception:
+            logger.warning(
+                "Failed to apply aura factor to reputation for user %s",
+                user_id, exc_info=True,
+            )
+
         # Monotonicity: positive events never decrease score
         if weight > 0:
             new_score = max(new_score, old_score)
 
-        # Floor: score never below 0.0
+        # Floor: score never below 0.0 (Requirement 7.5)
         user.reputation_score = max(0.0, new_score)
 
     await db.flush()
+
+    # Enqueue aura recalculation for this runner (affected by reputation change)
+    # (Requirement 7.1 — aura-backed runners trigger recalc on rep update)
+    try:
+        await enqueue_recalculation(user_id)
+    except Exception:
+        logger.warning(
+            "Failed to enqueue aura recalculation for runner %s after reputation update",
+            user_id, exc_info=True,
+        )
+
+    # Aura recalculation: if this user is an active Ancient holder,
+    # enqueue recalc for every runner they support (Requirement 3.4)
+    try:
+        wallet_result = await db.execute(
+            select(Wallet.wallet_address).where(Wallet.user_id == user_id)
+        )
+        wallet_addresses = [r[0] for r in wallet_result.all()]
+
+        if wallet_addresses:
+            holder_result = await db.execute(
+                select(AncientHolder.id).where(
+                    AncientHolder.wallet_address.in_(wallet_addresses),
+                    AncientHolder.is_active == True,
+                )
+            )
+            holder_ids = [r[0] for r in holder_result.all()]
+
+            if holder_ids:
+                contrib_result = await db.execute(
+                    select(AuraContribution.runner_id)
+                    .where(AuraContribution.ancient_holder_id.in_(holder_ids))
+                    .distinct()
+                )
+                runner_ids = [r[0] for r in contrib_result.all()]
+
+                for runner_id in runner_ids:
+                    await enqueue_recalculation(runner_id)
+    except Exception:
+        logger.warning("Failed to enqueue aura recalculations after reputation change for user %s", user_id, exc_info=True)

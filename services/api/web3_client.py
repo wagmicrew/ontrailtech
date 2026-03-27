@@ -74,6 +74,90 @@ FRIEND_SHARES_ABI = [
 ]
 
 
+ANCIENT_NFT_ABI = [
+    # Transfer event (ERC-721)
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "name": "from", "type": "address"},
+            {"indexed": True, "name": "to", "type": "address"},
+            {"indexed": True, "name": "tokenId", "type": "uint256"},
+        ],
+        "name": "Transfer",
+        "type": "event",
+    },
+    # balanceOf function (ERC-721)
+    {
+        "inputs": [{"name": "owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+
+class AncientNFTWeb3Client:
+    """Web3 client for the Ancient NFT contract, implementing the AncientNFTClient protocol."""
+
+    def __init__(self, address: str):
+        self.address = address
+        self.contract = w3.eth.contract(
+            address=Web3.to_checksum_address(address), abi=ANCIENT_NFT_ABI
+        ) if w3 and address else None
+
+    async def get_transfer_events(self, from_block: int, to_block: int) -> list[dict]:
+        """Return Transfer events between blocks. Each dict has 'from', 'to', 'tokenId'."""
+        if not self.contract:
+            logger.warning("Ancient NFT contract not configured, skipping event fetch")
+            return []
+        try:
+            event_filter = self.contract.events.Transfer.create_filter(
+                fromBlock=from_block, toBlock=to_block
+            )
+            raw_events = event_filter.get_all_entries()
+            return [
+                {
+                    "from": evt["args"]["from"],
+                    "to": evt["args"]["to"],
+                    "tokenId": evt["args"]["tokenId"],
+                }
+                for evt in raw_events
+            ]
+        except Exception as e:
+            logger.error("Failed to fetch Ancient NFT Transfer events: %s", e)
+            raise
+
+    async def get_latest_block(self) -> int:
+        """Return the latest block number on chain."""
+        if not w3:
+            raise RuntimeError("Web3 not connected")
+        try:
+            return w3.eth.block_number
+        except Exception as e:
+            logger.error("Failed to get latest block: %s", e)
+            raise
+
+    async def get_balance(self, wallet: str) -> int:
+        """Return the Ancient NFT balance for a wallet address."""
+        if not self.contract:
+            logger.warning("Ancient NFT contract not configured, returning 0")
+            return 0
+        try:
+            return self.contract.functions.balanceOf(
+                Web3.to_checksum_address(wallet)
+            ).call()
+        except Exception as e:
+            logger.error("Failed to get Ancient NFT balance for %s: %s", wallet, e)
+            raise
+
+
+def get_ancient_nft_client() -> Optional[AncientNFTWeb3Client]:
+    if settings.ancient_nft_address:
+        return AncientNFTWeb3Client(settings.ancient_nft_address)
+    return None
+
+
 def get_poi_nft_client() -> Optional[ContractClient]:
     if settings.poi_nft_address:
         return ContractClient(settings.poi_nft_address, POI_NFT_ABI)

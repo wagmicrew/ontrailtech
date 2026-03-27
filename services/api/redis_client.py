@@ -14,6 +14,12 @@ TTL_GRID_CELL = 3600      # 1 hour
 TTL_REP_WEIGHTS = 3600    # 1 hour
 TTL_TOKEN_PRICE = 30      # 30 seconds
 TTL_NEARBY_POI = 300      # 5 minutes
+TTL_AURA_SCORE = 15       # 15 seconds
+TTL_AURA_PERCENTILES = 300 # 5 minutes
+TTL_AURA_LEADERBOARD = 60 # 1 minute
+TTL_AURA_CONFIG = 3600    # 1 hour
+TTL_GRAPH_NODE = 15       # 15 seconds
+TTL_GRAPH_TRENDING = 60   # 1 minute
 
 
 async def cache_get(key: str) -> Optional[Any]:

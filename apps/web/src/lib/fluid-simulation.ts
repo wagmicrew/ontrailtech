@@ -177,7 +177,7 @@ function createProgram(gl: WebGLRenderingContext, vertSrc: string, fragSrc: stri
   gl.attachShader(program, compileShader(gl, gl.VERTEX_SHADER, vertSrc));
   gl.attachShader(program, compileShader(gl, gl.FRAGMENT_SHADER, fragSrc));
   gl.linkProgram(program);
-  if (!gl.getLinkParameter(program, gl.LINK_STATUS))
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
     throw new Error(gl.getProgramInfoLog(program) ?? 'Program link error');
 
   const uniforms: Record<string, WebGLUniformLocation> = {};

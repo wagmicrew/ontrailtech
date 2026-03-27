@@ -1,5 +1,6 @@
 """Runner-specific endpoints — token progress, dashboard, FriendPass status, notifications, cards."""
 import uuid as uuid_mod
+import random
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -14,7 +15,7 @@ from models import (
     ReputationEvent, UserNotification, ShareableCard,
 )
 from dependencies import get_current_user
-from redis_client import cache_get, cache_set
+from redis_client import cache_get, cache_set, cache_delete
 
 router = APIRouter()
 
@@ -297,3 +298,57 @@ async def get_card_image(card_id: str, db: AsyncSession = Depends(get_db)):
 
     # TODO: Return actual PNG image
     return {"card_id": str(card.id), "headline": card.headline, "image_url": card.image_url}
+
+
+# ── Boost Runner ──
+
+class BoostResponse(BaseModel):
+    boost_pct: float
+    is_golden: bool
+    boost_until: str
+    message: str
+
+
+@router.post("/boost/{username}", response_model=BoostResponse)
+async def boost_runner(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Give a runner a temporary reputation boost for 24 hours.
+    5% chance of a golden 5% boost; otherwise random 0.1–1.0%.
+    No authentication required — anyone can boost a runner.
+    """
+    result = await db.execute(select(User).where(User.username == username.lower()))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Runner '{username}' not found")
+
+    is_golden = random.random() < 0.05
+    boost_pct = 5.0 if is_golden else round(random.uniform(0.1, 1.0), 2)
+
+    event = ReputationEvent(
+        user_id=user.id,
+        event_type="boost",
+        weight=boost_pct,
+        event_metadata={"golden": is_golden},
+    )
+    db.add(event)
+    await db.flush()
+
+    # Invalidate runner profile cache so next fetch reflects the boost
+    await cache_delete(f"runner_profile:{username.lower()}")
+
+    boost_until = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+    msg = (
+        "Golden boost activated! Aura flowing gold!"
+        if is_golden
+        else f"+{boost_pct}% boost activated for 24 hours!"
+    )
+
+    return BoostResponse(
+        boost_pct=boost_pct,
+        is_golden=is_golden,
+        boost_until=boost_until,
+        message=msg,
+    )

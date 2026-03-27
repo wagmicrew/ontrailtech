@@ -106,7 +106,7 @@ export const api = {
     }),
 
   authRequestOTP: (email: string) =>
-    request<{ message: string }>('/auth/request-otp', {
+    request<{ message: string; is_new_user: boolean }>('/auth/request-otp', {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
@@ -247,6 +247,8 @@ export const api = {
   // --- Runners ---
   getTokenProgress: (runnerId: string) => request<any>(`/runners/${runnerId}/token-progress`),
   getDashboardProgress: () => request<any>('/runners/dashboard/progress'),
+  boostRunner: (username: string) =>
+    request<any>(`/runners/boost/${username}`, { method: 'POST' }),
 
   // --- Notifications ---
   getNotifications: () => request<any>('/runners/notifications'),
@@ -258,6 +260,16 @@ export const api = {
     request<any>('/runners/cards/generate', {
       method: 'POST', body: JSON.stringify({ card_type: cardType, headline, data }),
     }),
+
+  // --- Aura ---
+  getRunnerAura: (runnerId: string) => request<any>(`/aura/${runnerId}`),
+  getRunnerLeaderboard: () => request<any>('/aura/leaderboard/runners'),
+  getAncientLeaderboard: () => request<any>('/aura/leaderboard/ancients'),
+
+  // --- Graph ---
+  getGraphNode: (username: string) => request<any>(`/graph/node/${username}`),
+  getGraphNeighbors: (username: string) => request<any>(`/graph/neighbors/${username}`),
+  getGraphTrending: () => request<any>('/graph/trending'),
 
   // --- Admin Settings ---
   getAllSettings: () => request<any[]>('/admin/settings'),

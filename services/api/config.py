@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     tge_factory_address: str = ""
     treasury_address: str = ""
     friend_shares_address: str = ""
+    ancient_nft_address: str = ""
+    platform_private_key: str = ""
 
     class Config:
         env_file = ".env"

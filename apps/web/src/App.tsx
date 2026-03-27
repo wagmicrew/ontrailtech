@@ -7,9 +7,11 @@ import RoutesPage from './pages/Routes';
 import Tokens from './pages/Tokens';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
+import AuraLeaderboard from './pages/AuraLeaderboard';
 import RunnerLanding from './pages/RunnerLanding';
 import { resolveRunnerFromSubdomain } from './lib/subdomain';
 import { useAuth } from './context/AuthContext';
+import AuraToastContainer from './components/AuraToastContainer';
 
 function AdminRoute() {
   const { isAdmin, isLoading } = useAuth();
@@ -25,19 +27,28 @@ export default function App() {
 
   // If on a runner subdomain, render the journey landing page (full-bleed, no Layout)
   if (runnerUsername) {
-    return <RunnerLanding />;
+    return (
+      <>
+        <AuraToastContainer />
+        <RunnerLanding />
+      </>
+    );
   }
 
   return (
-    <Routes>
+    <>
+      <AuraToastContainer />
+      <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
         <Route path="/explore" element={<Explore />} />
         <Route path="/routes" element={<RoutesPage />} />
         <Route path="/tokens" element={<Tokens />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/leaderboard" element={<AuraLeaderboard />} />
         <Route path="/admin" element={<AdminRoute />} />
       </Route>
     </Routes>
+    </>
   );
 }

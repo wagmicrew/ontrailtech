@@ -13,6 +13,7 @@ from database import get_db
 from dependencies import get_current_user
 from models import Friend, Referral, ReputationEvent, User, Wallet
 from wallet_service import wallet_service
+from engines.influence_engine import upsert_edge
 
 router = APIRouter()
 settings = get_settings()
@@ -93,6 +94,13 @@ async def _process_referral(
     referrer.reputation_score = max(
         (referrer.reputation_score or 0.0) + REFERRAL_SIGNUP_REPUTATION_WEIGHT, 0.0
     )
+
+    # Influence graph: upsert referral edge
+    try:
+        from decimal import Decimal
+        await upsert_edge(db, referrer.id, new_user.id, "referral", Decimal("1"))
+    except Exception:
+        logger.warning("Failed to upsert influence edge for referral (referrer: %s)", referrer.id)
 
 
 # ── Endpoints ──

@@ -28,7 +28,6 @@ interface AuthModalProps {
 }
 
 type Tab = 'email' | 'google' | 'wallet';
-type EmailMode = 'login' | 'register' | 'otp' | 'forgot-password' | 'reset-password';
 
 const tabVariants = {
   initial: { opacity: 0, x: 20 },
@@ -38,14 +37,11 @@ const tabVariants = {
 
 export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'email' }: AuthModalProps) {
   const [tab, setTab] = useState<Tab>(defaultTab);
-  const [emailMode, setEmailMode] = useState<EmailMode>('login');
 
   // Email tab state
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
+  const [isNewUser, setIsNewUser] = useState(false);
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -54,21 +50,18 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
   useEffect(() => {
     if (isOpen) {
       setTab(defaultTab);
-      setEmailMode('login');
       resetFields();
     }
   }, [isOpen, defaultTab]);
 
   useEffect(() => {
     resetFields();
-  }, [tab, emailMode]);
+  }, [tab]);
 
   function resetFields() {
     setEmail('');
-    setPassword('');
-    setNewPassword('');
-    setOtpCode('');
     setOtpSent(false);
+    setIsNewUser(false);
     setError('');
     setLoading(false);
   }
@@ -84,37 +77,12 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
     }
   }, [isOpen, onClose]);
 
-  const handleEmailLogin = useCallback(async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const response = await api.authLogin(email, password);
-      onSuccess(response);
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [email, password, onSuccess]);
-
-  const handleEmailRegister = useCallback(async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const response = await api.authRegister(email, password);
-      onSuccess(response);
-    } catch (err: any) {
-      setError(err.message || 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [email, password, onSuccess]);
-
   const handleRequestOTP = useCallback(async () => {
     setError('');
     setLoading(true);
     try {
-      await api.authRequestOTP(email);
+      const result = await api.authRequestOTP(email);
+      setIsNewUser(result.is_new_user ?? false);
       setOtpSent(true);
     } catch (err: any) {
       setError(err.message || 'Failed to send code');
@@ -135,33 +103,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
       setLoading(false);
     }
   }, [email, onSuccess]);
-
-  const handleForgotPassword = useCallback(async () => {
-    setError('');
-    setLoading(true);
-    try {
-      await api.authForgotPassword(email);
-      setOtpSent(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to send reset code');
-    } finally {
-      setLoading(false);
-    }
-  }, [email]);
-
-  const handleResetPassword = useCallback(async (code?: string) => {
-    setError('');
-    setLoading(true);
-    const finalCode = code ?? otpCode;
-    try {
-      const response = await api.authVerifyOTP(email, finalCode, 'reset', newPassword);
-      onSuccess(response);
-    } catch (err: any) {
-      setError(err.message || 'Password reset failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [email, otpCode, newPassword, onSuccess]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'email', label: 'Email' },
@@ -218,27 +159,17 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
         {/* Tab content */}
         <AnimatePresence mode="wait">
           {tab === 'email' && (
-            <motion.div key={`email-${emailMode}`} variants={tabVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.15 }}>
+            <motion.div key="email" variants={tabVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.15 }}>
               <EmailTab
-                emailMode={emailMode}
-                setEmailMode={setEmailMode}
                 email={email}
                 setEmail={setEmail}
-                password={password}
-                setPassword={setPassword}
-                newPassword={newPassword}
-                setNewPassword={setNewPassword}
-                otpCode={otpCode}
-                setOtpCode={setOtpCode}
                 otpSent={otpSent}
+                isNewUser={isNewUser}
                 error={error}
                 loading={loading}
-                onLogin={handleEmailLogin}
-                onRegister={handleEmailRegister}
                 onRequestOTP={handleRequestOTP}
                 onVerifyOTP={handleVerifyOTP}
-                onForgotPassword={handleForgotPassword}
-                onResetPassword={handleResetPassword}
+                onResetEmail={resetFields}
               />
             </motion.div>
           )}
@@ -299,128 +230,63 @@ function ErrorMessage({ message }: { message: string }) {
 /* ─── Email Tab ─── */
 
 interface EmailTabProps {
-  emailMode: EmailMode;
-  setEmailMode: (m: EmailMode) => void;
   email: string;
   setEmail: (v: string) => void;
-  password: string;
-  setPassword: (v: string) => void;
-  newPassword: string;
-  setNewPassword: (v: string) => void;
-  otpCode: string;
-  setOtpCode: (v: string) => void;
   otpSent: boolean;
+  isNewUser: boolean;
   error: string;
   loading: boolean;
-  onLogin: () => void;
-  onRegister: () => void;
   onRequestOTP: () => void;
   onVerifyOTP: (code: string) => void;
-  onForgotPassword: () => void;
-  onResetPassword: (code?: string) => void;
+  onResetEmail: () => void;
 }
 
 function EmailTab({
-  emailMode, setEmailMode,
-  email, setEmail, password, setPassword,
-  newPassword, setNewPassword,
-  otpCode, setOtpCode, otpSent,
+  email, setEmail,
+  otpSent, isNewUser,
   error, loading,
-  onLogin, onRegister, onRequestOTP, onVerifyOTP,
-  onForgotPassword, onResetPassword,
+  onRequestOTP, onVerifyOTP, onResetEmail,
 }: EmailTabProps) {
-  if (emailMode === 'login') {
+  if (!otpSent) {
     return (
       <div className="space-y-3">
+        <p className="text-sm text-gray-500 text-center">
+          Enter your email to sign in or create an account.
+        </p>
         <InputField type="email" placeholder="Email address" value={email} onChange={setEmail} />
-        <InputField type="password" placeholder="Password" value={password} onChange={setPassword} />
         <ErrorMessage message={error} />
-        <PrimaryButton onClick={onLogin} loading={loading}>Sign In</PrimaryButton>
-        <div className="flex items-center justify-between text-xs">
-          <button onClick={() => setEmailMode('register')} className="text-emerald-600 hover:underline">
-            Don't have an account? Create one
-          </button>
-          <button onClick={() => setEmailMode('forgot-password')} className="text-gray-400 hover:text-gray-600">
-            Forgot Password?
-          </button>
+        <PrimaryButton onClick={onRequestOTP} loading={loading} disabled={!email.trim()}>
+          Continue
+        </PrimaryButton>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {isNewUser ? (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-800 text-center">
+          <p className="font-semibold mb-1">Welcome to OnTrail! 🎉</p>
+          <p>
+            Your account has been created. We sent a 6-digit code to{' '}
+            <strong>{email}</strong> — enter it below to get started.
+          </p>
         </div>
-        <div className="relative my-2">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
-          <div className="relative flex justify-center text-xs"><span className="bg-white px-2 text-gray-400">or</span></div>
-        </div>
-        <button
-          onClick={() => setEmailMode('otp')}
-          className="w-full border border-gray-200 rounded-xl py-3 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-        >
-          Sign in with OTP code
-        </button>
-      </div>
-    );
-  }
-
-  if (emailMode === 'register') {
-    return (
-      <div className="space-y-3">
-        <InputField type="email" placeholder="Email address" value={email} onChange={setEmail} />
-        <InputField type="password" placeholder="Password (8+ chars, upper, lower, digit)" value={password} onChange={setPassword} />
-        <ErrorMessage message={error} />
-        <PrimaryButton onClick={onRegister} loading={loading}>Create Account</PrimaryButton>
-        <button onClick={() => setEmailMode('login')} className="text-xs text-emerald-600 hover:underline w-full text-center">
-          Already have an account? Sign in
-        </button>
-      </div>
-    );
-  }
-
-  if (emailMode === 'otp') {
-    return (
-      <div className="space-y-3">
-        <InputField type="email" placeholder="Email address" value={email} onChange={setEmail} disabled={otpSent} />
-        {!otpSent ? (
-          <>
-            <ErrorMessage message={error} />
-            <PrimaryButton onClick={onRequestOTP} loading={loading}>Send Code</PrimaryButton>
-          </>
-        ) : (
-          <>
-            <ErrorMessage message={error} />
-            <OTPInput onComplete={onVerifyOTP} disabled={loading} error={!!error} />
-          </>
-        )}
-        <button onClick={() => setEmailMode('login')} className="text-xs text-gray-400 hover:text-gray-600 w-full text-center">
-          Back to sign in
-        </button>
-      </div>
-    );
-  }
-
-  if (emailMode === 'forgot-password') {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm text-gray-500">Enter your email to receive a reset code.</p>
-        <InputField type="email" placeholder="Email address" value={email} onChange={setEmail} disabled={otpSent} />
-        {!otpSent ? (
-          <>
-            <ErrorMessage message={error} />
-            <PrimaryButton onClick={onForgotPassword} loading={loading}>Send Reset Code</PrimaryButton>
-          </>
-        ) : (
-          <>
-            <OTPInput onComplete={(c) => { setOtpCode(c); }} disabled={loading} />
-            <InputField type="password" placeholder="New password" value={newPassword} onChange={setNewPassword} />
-            <ErrorMessage message={error} />
-            <PrimaryButton onClick={() => onResetPassword(otpCode)} loading={loading}>Reset Password</PrimaryButton>
-          </>
-        )}
-        <button onClick={() => setEmailMode('login')} className="text-xs text-gray-400 hover:text-gray-600 w-full text-center">
-          Back to sign in
-        </button>
-      </div>
-    );
-  }
-
-  // reset-password mode (fallback, shouldn't normally reach here)
-  return null;
+      ) : (
+        <p className="text-sm text-gray-500 text-center">
+          We sent a 6-digit code to <strong>{email}</strong>. Enter it below to sign in.
+        </p>
+      )}
+      <ErrorMessage message={error} />
+      <OTPInput onComplete={onVerifyOTP} disabled={loading} error={error || undefined} />
+      <button
+        onClick={onResetEmail}
+        className="text-xs text-gray-400 hover:text-gray-600 w-full text-center"
+      >
+        Use a different email
+      </button>
+    </div>
+  );
 }
 
 /* ─── Google Tab ─── */
