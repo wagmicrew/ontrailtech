@@ -12,8 +12,8 @@ from dependencies import get_current_user
 
 router = APIRouter()
 
-RESERVED_WORDS = {"app", "api", "www", "admin", "ontrail", "support", "help"}
-USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9\-]{1,18}[a-z0-9]$")
+RESERVED_WORDS = {"app", "api", "www", "admin", "auth", "ontrail", "support", "help"}
+USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_]{1,18}[a-zA-Z0-9]$", re.IGNORECASE)
 
 
 class UsernameCheckResponse(BaseModel):
@@ -44,7 +44,7 @@ async def check_username(username: str, db: AsyncSession = Depends(get_db)):
     if not USERNAME_PATTERN.match(name):
         return UsernameCheckResponse(
             available=False, username=name,
-            reason="Username must be 3-20 chars, lowercase alphanumeric + hyphens",
+            reason="Username must be 3-20 chars, alphanumeric + underscores",
         )
 
     result = await db.execute(select(User).where(User.username == name))

@@ -1,6 +1,9 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from passlib.hash import bcrypt
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
@@ -11,7 +14,7 @@ from models import (
     User, RunnerToken, FriendShareModel, TokenTransaction,
     ReputationEvent, TokenPool,
 )
-from dependencies import get_current_user
+from dependencies import get_current_user, get_user_roles
 from redis_client import cache_get, cache_set
 from web3_client import get_friend_shares_client
 
@@ -78,6 +81,39 @@ class UserProfile(BaseModel):
 class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
+
+
+class MeResponse(BaseModel):
+    id: str
+    username: Optional[str]
+    email: Optional[str]
+    wallet_address: Optional[str]
+    avatar_url: Optional[str]
+    reputation_score: float
+    roles: list[str]
+    onboarding_completed: bool
+
+
+class AvatarRequest(BaseModel):
+    avatar_url: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def _validate_password(password: str) -> bool:
+    """8+ chars, at least one uppercase, one lowercase, one digit."""
+    if len(password) < 8:
+        return False
+    if not re.search(r"[A-Z]", password):
+        return False
+    if not re.search(r"[a-z]", password):
+        return False
+    if not re.search(r"\d", password):
+        return False
+    return True
 
 
 # ── Helpers ──
@@ -189,6 +225,61 @@ async def _build_activity_feed(db: AsyncSession, runner_id) -> list[ActivityFeed
     # Sort combined feed by recency (most recent first), cap at 10
     feed.sort(key=lambda x: x.timeAgo)
     return feed[:10]
+
+
+# ── Authenticated User Endpoints ──
+
+
+@router.get("/me", response_model=MeResponse)
+async def get_me(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return authenticated user profile."""
+    roles = await get_user_roles(user.id, db)
+    return MeResponse(
+        id=str(user.id),
+        username=user.username,
+        email=user.email,
+        wallet_address=user.wallet_address,
+        avatar_url=user.avatar_url,
+        reputation_score=user.reputation_score or 0.0,
+        roles=roles,
+        onboarding_completed=user.onboarding_completed or False,
+    )
+
+
+@router.post("/me/avatar")
+async def update_avatar(
+    req: AvatarRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update authenticated user's avatar URL."""
+    user.avatar_url = req.avatar_url
+    await db.flush()
+    return {"avatar_url": user.avatar_url}
+
+
+@router.post("/me/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change password: verify current, validate new, hash and update."""
+    if not user.password_hash or not bcrypt.verify(req.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    if not _validate_password(req.new_password):
+        raise HTTPException(
+            status_code=422,
+            detail="Password must be at least 8 characters with one uppercase letter, one lowercase letter, and one digit.",
+        )
+
+    user.password_hash = bcrypt.using(rounds=10).hash(req.new_password)
+    await db.flush()
+    return {"message": "Password changed successfully"}
 
 
 # ── Endpoints ──

@@ -1,0 +1,17 @@
+# OnTrail loppio server SSH config
+# Append this block to ~/.ssh/config on your local machine
+#
+#   Windows:  C:\Users\<you>\.ssh\config
+#   Linux/Mac: ~/.ssh/config
+#
+# The private key file loppio_rsa must be placed at ~/.ssh/loppio_rsa
+# Permissions (Linux/Mac): chmod 600 ~/.ssh/loppio_rsa
+
+Host loppio
+    HostName 85.208.51.194
+    User root
+    Port 22
+    IdentityFile ~/.ssh/loppio_rsa
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 3

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { useAuth } from '../../context/AuthContext';
 import { encodeFunctionData, parseEther, formatEther } from 'viem';
 import { api } from '../../lib/api';
 
@@ -52,9 +52,9 @@ export default function FriendPassPurchase({
   const [errorType, setErrorType] = useState<ErrorType | null>(null);
   const [userHoldings, setUserHoldings] = useState<number>(0);
 
-  const { user } = usePrivy();
-  const { wallets } = useWallets();
-  const userWallet = wallets?.[0];
+  const { wallet, userId } = useAuth();
+  // TODO: Replace with actual wallet provider integration (ConnectKit/wagmi)
+  const userWallet: any = wallet ? { address: wallet, getEthersProvider: async () => { throw new Error('Use wagmi provider'); } } : null;
 
   // Fetch price data
   useEffect(() => {

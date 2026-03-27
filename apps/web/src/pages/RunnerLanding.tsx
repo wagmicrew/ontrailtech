@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePrivy } from '@privy-io/react-auth';
+import { useAuth } from '../context/AuthContext';
 import { resolveRunnerFromSubdomain } from '../lib/subdomain';
 import { loadState, saveState } from '../lib/journey';
+import ReputationAura, { type AuraLevel } from '../components/ReputationAura';
 import { api } from '../lib/api';
 
 // --- Types ---
@@ -27,6 +28,7 @@ interface RunnerProfileData {
     tokenProgress: number;
   };
   activityFeed: ActivityFeedItem[];
+  auraLevel?: AuraLevel;
 }
 
 interface ActivityFeedItem {
@@ -344,7 +346,7 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
   const [notFound, setNotFound] = useState(false);
   const [reserving, setReserving] = useState(false);
 
-  const { login, authenticated } = usePrivy();
+  const { login, isConnected: authenticated } = useAuth();
 
   // Soft commitment CTA handler (Req 2.1, 2.2)
   const handleSecurePosition = useCallback(() => {
@@ -505,18 +507,25 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
             {profile.username}.ontrail.tech · {stats.totalSupporters} supporters
           </motion.p>
 
-          {/* Reputation rings (AppleActivityCard placeholder) */}
+          {/* Reputation rings with fluid aura visualization */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, delay: 0.4 }}
-            className="mb-8"
+            className="mb-8 flex flex-col items-center"
           >
-            <AppleActivityCard
-              steps={Math.min(profile.reputationScore, 100)}
+            <ReputationAura
+              auraLevel={profile.auraLevel ?? 'None'}
               reputation={Math.min(profile.reputationScore, 100)}
-              tokenActivity={stats.tokenProgress}
-            />
+              size={144}
+              auraSpread={40}
+            >
+              <AppleActivityCard
+                steps={Math.min(profile.reputationScore, 100)}
+                reputation={Math.min(profile.reputationScore, 100)}
+                tokenActivity={stats.tokenProgress}
+              />
+            </ReputationAura>
             <div className="flex justify-center gap-4 mt-3 text-xs text-slate-500">
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-green-500" /> Steps

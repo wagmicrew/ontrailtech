@@ -29,6 +29,13 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
 CORS_ORIGINS=https://ontrail.tech,https://app.ontrail.tech
 WEB3_RPC_URL=http://localhost:8545
+GOOGLE_CLIENT_ID=SET_FROM_SECRETS
+GOOGLE_CLIENT_SECRET=SET_FROM_SECRETS
+SMTP_HOST=smtp.ontrail.tech
+SMTP_PORT=587
+SMTP_USER=admin@ontrail.tech
+SMTP_PASSWORD=SET_AFTER_MAIL_SETUP
+SMTP_FROM=noreply@ontrail.tech
 EOF
 echo "API config created."
 
@@ -75,6 +82,13 @@ certbot certonly --webroot -w /var/www/html \
 ln -sf /etc/nginx/sites-available/ontrail-tech /etc/nginx/sites-enabled/ontrail-tech
 nginx -t && systemctl reload nginx
 echo "Nginx configured with TLS."
+
+# 6.5. Set up mail server
+echo "[6.5/7] Setting up mail server..."
+bash /var/www/ontrail/scripts/mail-setup.sh
+# After mail-setup.sh runs, update SMTP_PASSWORD in .env with the printed password
+echo "IMPORTANT: Update SMTP_PASSWORD in /var/www/ontrail/services/api/.env"
+echo "          with the admin@ontrail.tech password printed above."
 
 # 7. Start PM2 services
 echo "[7/7] Starting services..."

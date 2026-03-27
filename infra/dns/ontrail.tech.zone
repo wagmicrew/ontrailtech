@@ -4,7 +4,7 @@
 
 $TTL 3600
 @   IN  SOA ns1.loppio.se. admin.ontrail.tech. (
-        2025032601  ; Serial (YYYYMMDDNN)
+        2026032701  ; Serial (YYYYMMDDNN)
         3600        ; Refresh
         900         ; Retry
         604800      ; Expire
@@ -22,6 +22,7 @@ app     IN  A   85.208.51.194
 api     IN  A   85.208.51.194
 data    IN  A   85.208.51.194
 mail    IN  A   85.208.51.194
+smtp    IN  A   85.208.51.194
 
 ; Wildcard for dynamic runner subdomains
 *       IN  A   85.208.51.194
@@ -34,3 +35,10 @@ mail    IN  A   85.208.51.194
 
 ; DMARC
 _dmarc  IN  TXT "v=DMARC1; p=quarantine; rua=mailto:admin@ontrail.tech"
+
+; DKIM - public key inserted by opendkim-genkey after mail-setup.sh runs
+; Replace the placeholder p= value with the actual public key from /etc/opendkim/keys/ontrail.tech/mail.txt
+mail._domainkey IN  TXT "v=DKIM1; k=rsa; p=REPLACE_WITH_DKIM_PUBLIC_KEY"
+
+; SMTP submission hostname
+smtp    IN  CNAME mail.ontrail.tech.

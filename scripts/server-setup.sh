@@ -24,6 +24,13 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
 CORS_ORIGINS=https://ontrail.tech,https://app.ontrail.tech,http://localhost:5173
 WEB3_RPC_URL=http://localhost:8545
+GOOGLE_CLIENT_ID=SET_FROM_SECRETS
+GOOGLE_CLIENT_SECRET=SET_FROM_SECRETS
+SMTP_HOST=smtp.ontrail.tech
+SMTP_PORT=587
+SMTP_USER=admin@ontrail.tech
+SMTP_PASSWORD=SET_AFTER_MAIL_SETUP
+SMTP_FROM=noreply@ontrail.tech
 ENVEOF
 echo ".env created."
 

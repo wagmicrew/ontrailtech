@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import ReputationAura, { type AuraLevel } from '../components/ReputationAura';
 
 export default function Profile() {
   const { isConnected, userId, wallet } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [reputation, setReputation] = useState<any>(null);
+  const [auraLevel, setAuraLevel] = useState<AuraLevel>('None');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -43,9 +45,16 @@ export default function Profile() {
       {profile && (
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex items-center gap-4 mb-4">
-            <div className="w-16 h-16 bg-ontrail-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-              {profile.username?.[0]?.toUpperCase() || '?'}
-            </div>
+            <ReputationAura
+              auraLevel={auraLevel}
+              reputation={reputation?.total ?? 0}
+              size={64}
+              auraSpread={20}
+            >
+              <div className="w-16 h-16 bg-ontrail-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+                {profile.username?.[0]?.toUpperCase() || '?'}
+              </div>
+            </ReputationAura>
             <div>
               <h3 className="text-xl font-bold">{profile.username}</h3>
               <p className="text-sm text-gray-500 font-mono">{wallet}</p>

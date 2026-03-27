@@ -17,9 +17,13 @@ def gen_uuid():
 class User(Base):
     __tablename__ = "users"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
-    username = Column(String(20), unique=True, nullable=False, index=True)
-    email = Column(String(255), nullable=True)
-    wallet_address = Column(String(42), unique=True, nullable=False, index=True)
+    username = Column(String(20), unique=True, nullable=True, index=True)
+    email = Column(String(255), unique=True, nullable=True, index=True)
+    password_hash = Column(String(255), nullable=True)
+    wallet_address = Column(String(42), unique=True, nullable=True, index=True)
+    avatar_url = Column(String(500), nullable=True)
+    google_id = Column(String(255), unique=True, nullable=True)
+    onboarding_completed = Column(Boolean, default=False)
     reputation_score = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -29,8 +33,9 @@ class Wallet(Base):
     __tablename__ = "wallets"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    wallet_address = Column(String(42), nullable=False)
+    wallet_address = Column(String(42), nullable=False, unique=True)
     wallet_type = Column(String(50), default="ethereum")
+    encrypted_private_key = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

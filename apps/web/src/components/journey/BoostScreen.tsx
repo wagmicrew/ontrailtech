@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { useWallets } from '@privy-io/react-auth';
+import { useAuth } from '../../context/AuthContext';
 import { encodeFunctionData, parseEther } from 'viem';
 import { api } from '../../lib/api';
 
@@ -23,8 +23,9 @@ export default function BoostScreen({ runnerId, runnerUsername, runnerWallet, us
   const [progress, setProgress] = useState<any>(null);
   const [selectedTip, setSelectedTip] = useState(1);
   const [tipping, setTipping] = useState(false);
-  const { wallets } = useWallets();
-  const wallet = wallets?.[0];
+  const { wallet: walletAddress } = useAuth();
+  // TODO: Replace with actual wallet provider integration (ConnectKit/wagmi)
+  const wallet: any = walletAddress ? { address: walletAddress, getEthersProvider: async () => { throw new Error('Use wagmi provider'); } } : null;
 
   useEffect(() => {
     api.getTokenProgress(runnerId).then(setProgress).catch(() => {});

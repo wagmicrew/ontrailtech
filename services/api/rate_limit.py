@@ -9,9 +9,12 @@ async def check_rate_limit(key: str, max_requests: int, window_seconds: int):
     if current == 1:
         await redis.expire(key, window_seconds)
     if current > max_requests:
+        ttl = await redis.ttl(key)
+        retry_after = max(ttl, 1)
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit exceeded. Max {max_requests} requests per {window_seconds}s.",
+            headers={"Retry-After": str(retry_after)},
         )
 
 
@@ -35,3 +38,14 @@ async def rate_limit_user(user_id: str, max_req: int = 1000, window: int = 3600)
 async def rate_limit_poi_mint(user_id: str):
     """10 POI mints per hour per user."""
     await check_rate_limit(f"rl:poi_mint:{user_id}", 10, 3600)
+
+
+async def rate_limit_otp(email: str):
+    """3 OTP requests per minute per email."""
+    await check_rate_limit(f"rl:otp:{email}", 3, 60)
+
+
+async def rate_limit_register(request: Request):
+    """5 registration attempts per minute per IP."""
+    ip = request.client.host if request.client else "unknown"
+    await check_rate_limit(f"rl:register:{ip}", 5, 60)
