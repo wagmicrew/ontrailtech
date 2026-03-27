@@ -1,6 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAccount, useSignMessage } from 'wagmi';
+import { ConnectKitButton } from 'connectkit';
 import { api, AuthResponse } from '../lib/api';
+import OTPInput from './OTPInput';
+
+// Extend window for Google Identity Services
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (cfg: object) => void;
+          renderButton: (el: HTMLElement, cfg: object) => void;
+          prompt: () => void;
+        };
+      };
+    };
+  }
+}
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -105,18 +123,18 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
     }
   }, [email]);
 
-  const handleVerifyOTP = useCallback(async () => {
+  const handleVerifyOTP = useCallback(async (code: string) => {
     setError('');
     setLoading(true);
     try {
-      const response = await api.authVerifyOTP(email, otpCode, 'login');
+      const response = await api.authVerifyOTP(email, code, 'login');
       onSuccess(response);
     } catch (err: any) {
       setError(err.message || 'Invalid or expired OTP');
     } finally {
       setLoading(false);
     }
-  }, [email, otpCode, onSuccess]);
+  }, [email, onSuccess]);
 
   const handleForgotPassword = useCallback(async () => {
     setError('');
@@ -131,11 +149,12 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
     }
   }, [email]);
 
-  const handleResetPassword = useCallback(async () => {
+  const handleResetPassword = useCallback(async (code?: string) => {
     setError('');
     setLoading(true);
+    const finalCode = code ?? otpCode;
     try {
-      const response = await api.authVerifyOTP(email, otpCode, 'reset');
+      const response = await api.authVerifyOTP(email, finalCode, 'reset', newPassword);
       onSuccess(response);
     } catch (err: any) {
       setError(err.message || 'Password reset failed');
@@ -226,13 +245,13 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
 
           {tab === 'google' && (
             <motion.div key="google" variants={tabVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.15 }}>
-              <GoogleTab />
+              <GoogleTab onSuccess={onSuccess} onError={(msg) => setError(msg)} />
             </motion.div>
           )}
 
           {tab === 'wallet' && (
             <motion.div key="wallet" variants={tabVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.15 }}>
-              <WalletTab />
+              <WalletTab onSuccess={onSuccess} onError={(msg) => setError(msg)} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -296,9 +315,9 @@ interface EmailTabProps {
   onLogin: () => void;
   onRegister: () => void;
   onRequestOTP: () => void;
-  onVerifyOTP: () => void;
+  onVerifyOTP: (code: string) => void;
   onForgotPassword: () => void;
-  onResetPassword: () => void;
+  onResetPassword: (code?: string) => void;
 }
 
 function EmailTab({
@@ -364,9 +383,8 @@ function EmailTab({
           </>
         ) : (
           <>
-            <InputField type="text" placeholder="Enter 6-digit code" value={otpCode} onChange={setOtpCode} />
             <ErrorMessage message={error} />
-            <PrimaryButton onClick={onVerifyOTP} loading={loading}>Verify</PrimaryButton>
+            <OTPInput onComplete={onVerifyOTP} disabled={loading} error={!!error} />
           </>
         )}
         <button onClick={() => setEmailMode('login')} className="text-xs text-gray-400 hover:text-gray-600 w-full text-center">
@@ -388,10 +406,10 @@ function EmailTab({
           </>
         ) : (
           <>
-            <InputField type="text" placeholder="Enter 6-digit code" value={otpCode} onChange={setOtpCode} />
+            <OTPInput onComplete={(c) => { setOtpCode(c); }} disabled={loading} />
             <InputField type="password" placeholder="New password" value={newPassword} onChange={setNewPassword} />
             <ErrorMessage message={error} />
-            <PrimaryButton onClick={onResetPassword} loading={loading}>Reset Password</PrimaryButton>
+            <PrimaryButton onClick={() => onResetPassword(otpCode)} loading={loading}>Reset Password</PrimaryButton>
           </>
         )}
         <button onClick={() => setEmailMode('login')} className="text-xs text-gray-400 hover:text-gray-600 w-full text-center">
@@ -407,48 +425,150 @@ function EmailTab({
 
 /* ─── Google Tab ─── */
 
-function GoogleTab() {
+function GoogleTab({ onSuccess, onError }: {
+  onSuccess: (r: AuthResponse) => void;
+  onError: (msg: string) => void;
+}) {
+  const btnRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) return;
+
+    const init = () => {
+      if (!window.google || !btnRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: async (response: { credential: string }) => {
+          setLoading(true);
+          try {
+            const result = await api.authGoogle(response.credential);
+            onSuccess(result);
+          } catch (e: any) {
+            onError(e.message || 'Google sign-in failed');
+          } finally {
+            setLoading(false);
+          }
+        },
+        auto_select: false,
+      });
+      window.google.accounts.id.renderButton(btnRef.current, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'continue_with',
+        shape: 'rectangular',
+        logo_alignment: 'left',
+        width: (btnRef.current.offsetWidth || 400).toString(),
+      });
+    };
+
+    if (window.google) {
+      init();
+    } else {
+      const scriptId = 'gsi-client';
+      if (!document.getElementById(scriptId)) {
+        const s = document.createElement('script');
+        s.id = scriptId;
+        s.src = 'https://accounts.google.com/gsi/client';
+        s.async = true;
+        s.onload = init;
+        document.head.appendChild(s);
+      } else {
+        // Script tag exists but window.google not ready yet
+        const interval = setInterval(() => {
+          if (window.google) { clearInterval(interval); init(); }
+        }, 100);
+        return () => clearInterval(interval);
+      }
+    }
+  }, [onSuccess, onError]);
+
   return (
     <div className="space-y-4 py-4">
       <p className="text-sm text-gray-500 text-center">Sign in with your Google account</p>
-      <button
-        onClick={() => {
-          // TODO: Integrate actual Google OAuth popup
-          console.log('Google OAuth — not yet implemented');
-        }}
-        className="w-full flex items-center justify-center gap-3 border border-gray-200 rounded-xl py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-      >
-        {/* Google icon placeholder */}
-        <svg className="w-5 h-5" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-        </svg>
-        Continue with Google
-      </button>
+      {loading && (
+        <div className="flex items-center justify-center gap-2 text-sm text-gray-400 py-2">
+          <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          Signing in…
+        </div>
+      )}
+      <div ref={btnRef} className="flex justify-center min-h-[44px]" />
+      {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+        <p className="text-xs text-amber-500 text-center">⚠ VITE_GOOGLE_CLIENT_ID not configured</p>
+      )}
     </div>
   );
 }
 
 /* ─── Wallet Tab ─── */
 
-function WalletTab() {
+function WalletTab({ onSuccess, onError }: {
+  onSuccess: (r: AuthResponse) => void;
+  onError: (msg: string) => void;
+}) {
+  const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  const [loading, setLoading] = useState(false);
+
+  const handleSIWE = useCallback(async () => {
+    if (!address) return;
+    setLoading(true);
+    try {
+      const { message } = await api.authChallenge(address);
+      const signature = await signMessageAsync({ message });
+      const result = await api.authWallet(address, signature, message);
+      onSuccess(result);
+    } catch (e: any) {
+      if (e.message?.includes('rejected') || e.message?.includes('denied')) {
+        onError('Signature rejected by wallet');
+      } else {
+        onError(e.message || 'Wallet sign-in failed');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [address, signMessageAsync, onSuccess, onError]);
+
+  if (!isConnected) {
+    return (
+      <div className="space-y-4 py-4">
+        <p className="text-sm text-gray-500 text-center">Connect your Ethereum wallet to sign in with SIWE</p>
+        <ConnectKitButton.Custom>
+          {({ show }) => (
+            <button
+              onClick={show}
+              className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl py-3 font-medium text-sm flex items-center justify-center gap-2 hover:from-blue-600 hover:to-indigo-700 transition-all"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a5 5 0 00-10 0v2M5 11h14a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2z" />
+              </svg>
+              Connect Wallet
+            </button>
+          )}
+        </ConnectKitButton.Custom>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 py-4">
-      <p className="text-sm text-gray-500 text-center">Connect your Ethereum wallet to sign in</p>
-      <button
-        onClick={() => {
-          // TODO: Integrate actual WalletConnect / SIWE flow
-          console.log('WalletConnect — not yet implemented');
-        }}
-        className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl py-3 font-medium hover:from-blue-600 hover:to-indigo-700 transition-all text-sm flex items-center justify-center gap-2"
-      >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a5 5 0 00-10 0v2M5 11h14a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2z" />
-        </svg>
-        Connect Wallet
-      </button>
+      <p className="text-sm text-gray-500 text-center">Sign the message in your wallet to authenticate</p>
+      <p className="text-xs font-mono text-center text-gray-400 bg-gray-50 rounded-lg px-3 py-2 truncate">{address}</p>
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-3">
+          <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          Waiting for signature…
+        </div>
+      ) : (
+        <button
+          onClick={handleSIWE}
+          className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl py-3 font-medium text-sm hover:from-blue-600 hover:to-indigo-700 transition-all"
+        >
+          Sign In with Wallet
+        </button>
+      )}
     </div>
   );
 }

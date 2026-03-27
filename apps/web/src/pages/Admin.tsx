@@ -17,7 +17,7 @@ async function adminRequest(path: string, options: RequestInit = {}) {
 }
 
 export default function Admin() {
-  const { isConnected } = useAuth();
+  const { isConnected, isAdmin } = useAuth();
   const [tab, setTab] = useState<'config' | 'simulate' | 'logs'>('config');
   const [configKey, setConfigKey] = useState('');
   const [configValue, setConfigValue] = useState('');
@@ -27,7 +27,8 @@ export default function Admin() {
   const [logs, setLogs] = useState<any[]>([]);
   const [message, setMessage] = useState('');
 
-  if (!isConnected) return <p className="text-gray-500 py-10 text-center">Connect wallet with admin role to access.</p>;
+  if (!isConnected) return <p className="text-gray-500 py-10 text-center">Please sign in to continue.</p>;
+  if (!isAdmin) return <p className="text-gray-500 py-10 text-center">Admin access required.</p>;
 
   const updateConfig = async () => {
     try {

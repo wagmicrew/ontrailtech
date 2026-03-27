@@ -111,10 +111,15 @@ export const api = {
       body: JSON.stringify({ email }),
     }),
 
-  authVerifyOTP: (email: string, code: string, purpose?: string) =>
+  authVerifyOTP: (email: string, code: string, purpose?: string, newPassword?: string) =>
     request<AuthResponse>('/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ email, code, ...(purpose ? { purpose } : {}) }),
+      body: JSON.stringify({
+        email,
+        code,
+        ...(purpose ? { purpose } : {}),
+        ...(newPassword ? { new_password: newPassword } : {}),
+      }),
     }),
 
   authForgotPassword: (email: string) =>

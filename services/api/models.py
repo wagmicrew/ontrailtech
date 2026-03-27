@@ -386,3 +386,66 @@ class UserNotification(Base):
     action_url = Column(Text, nullable=True)
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Ancient Aura System ──
+
+class AncientHolder(Base):
+    __tablename__ = "ancient_holders"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    wallet_address = Column(String(42), unique=True, nullable=False, index=True)
+    token_count = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_synced_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AuraIndex(Base):
+    __tablename__ = "aura_index"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    runner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    total_aura = Column(Numeric, nullable=False, default=0)
+    weighted_aura = Column(Numeric, nullable=False, default=0)
+    ancient_supporter_count = Column(Integer, nullable=False, default=0)
+    aura_level = Column(String(20), nullable=False, default="None")
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AuraContribution(Base):
+    __tablename__ = "aura_contributions"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    ancient_holder_id = Column(UUID(as_uuid=True), ForeignKey("ancient_holders.id"), nullable=False)
+    runner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    holder_weight = Column(Numeric, nullable=False)
+    support_strength = Column(Numeric, nullable=False)
+    contribution = Column(Numeric, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_aura_contributions_holder_runner", "ancient_holder_id", "runner_id", unique=True),
+    )
+
+
+class InfluenceNode(Base):
+    __tablename__ = "influence_nodes"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    reputation_score = Column(Numeric, nullable=False, default=0)
+    aura_score = Column(Numeric, nullable=False, default=0)
+    is_ancient = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class InfluenceEdge(Base):
+    __tablename__ = "influence_edges"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    from_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    to_runner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    edge_type = Column(String(20), nullable=False)
+    weight = Column(Numeric, nullable=False, default=0)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_influence_edges_from_to", "from_user_id", "to_runner_id"),
+    )

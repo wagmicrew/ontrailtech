@@ -15,25 +15,36 @@ export default function Home() {
   const logoScale = useTransform(scrollYProgress, [0, 0.5], [1, 0.9]);
 
   return (
-    <div className="space-y-0 -mx-6 -mt-8">
+    <div>
       {/* ═══════════════════════════════════════════════════════════════
           HERO SECTION — Full viewport, epic, flowing
       ═══════════════════════════════════════════════════════════════ */}
-      <section ref={heroRef} className="relative min-h-screen overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-emerald-950">
+      <section ref={heroRef} className="relative min-h-[calc(100vh-3rem)] overflow-hidden bg-slate-950">
+        {/* Full-cover hero image */}
+        <div className="absolute inset-0">
+          <img
+            src="/hero26.png"
+            alt=""
+            aria-hidden="true"
+            className="w-full h-full object-cover object-center"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/75 via-slate-900/55 to-emerald-950/92" />
+        </div>
+
         {/* Animated gradient orbs */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-emerald-500/20 rounded-full blur-[120px] animate-pulse" />
-          <div className="absolute top-1/3 -right-20 w-[500px] h-[500px] bg-teal-400/15 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '2s' }} />
-          <div className="absolute -bottom-40 left-1/3 w-[700px] h-[700px] bg-green-500/10 rounded-full blur-[140px] animate-pulse" style={{ animationDelay: '4s' }} />
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-emerald-500/25 rounded-full blur-[120px] animate-pulse" />
+          <div className="absolute top-1/3 -right-20 w-[500px] h-[500px] bg-teal-400/20 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '2s' }} />
+          <div className="absolute -bottom-40 left-1/3 w-[700px] h-[700px] bg-green-500/15 rounded-full blur-[140px] animate-pulse" style={{ animationDelay: '4s' }} />
         </div>
 
         {/* Subtle grid overlay */}
-        <div className="absolute inset-0 opacity-[0.03]"
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
           style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
 
         {/* Hero content */}
         <motion.div style={{ y: heroY, opacity: heroOpacity }}
-          className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center">
+          className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-3rem)] px-6 text-center">
 
           {/* Logo */}
           <motion.div style={{ scale: logoScale }}
@@ -67,7 +78,7 @@ export default function Home() {
 
           {/* CTA Buttons */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.7 }}
-            className="flex gap-4 justify-center flex-wrap mb-16">
+            className="flex gap-4 justify-center flex-wrap">
             {isConnected ? (
               <Link to="/explore"
                 className="group relative bg-gradient-to-r from-emerald-500 to-green-400 text-white px-8 py-4 rounded-2xl font-semibold text-lg shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all hover:-translate-y-1">
@@ -85,23 +96,6 @@ export default function Home() {
               className="border border-white/20 text-white/80 px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-white/5 hover:border-emerald-400/40 hover:text-white transition-all backdrop-blur-sm">
               Explore Tokens
             </Link>
-          </motion.div>
-
-          {/* Hero Image — the epic runner illustration */}
-          <motion.div initial={{ opacity: 0, y: 40, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 1, delay: 0.9, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full max-w-5xl mx-auto">
-            {/* Glow behind image */}
-            <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/20 via-transparent to-transparent rounded-3xl blur-2xl scale-110" />
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-emerald-400/20 blur-[60px]" />
-
-            {/* Image container with glass border */}
-            <div className="relative rounded-2xl md:rounded-3xl overflow-hidden border border-white/10 shadow-2xl shadow-black/50">
-              <img src="/hero26.png" alt="Runner on mountain trail"
-                className="w-full h-auto object-cover" />
-              {/* Bottom fade to blend into next section */}
-              <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 to-transparent" />
-            </div>
           </motion.div>
         </motion.div>
 
