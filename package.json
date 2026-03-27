@@ -9,6 +9,9 @@
     "contracts",
     "packages/*"
   ],
+  "dependencies": {
+    "valtio": "^1.13.2"
+  },
   "scripts": {
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:api": "cd services/api && uvicorn main:app --reload --port 8000",
