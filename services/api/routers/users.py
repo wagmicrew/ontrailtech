@@ -258,12 +258,20 @@ async def _save_uploaded_image(user_id, upload: UploadFile, media_type: str) -> 
         raise HTTPException(status_code=413, detail="Image exceeds 5MB limit")
 
     suffix = ALLOWED_IMAGE_TYPES[content_type]
-    target_dir = MEDIA_ROOT / str(user_id) / media_type
+    target_dir = MEDIA_ROOT / "public" / "users" / str(user_id) / media_type
     target_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid.uuid4().hex}{suffix}"
+
+    for existing_file in target_dir.iterdir():
+        if existing_file.is_file():
+            existing_file.unlink()
+
+    filename = {
+        "profile": f"avatar{suffix}",
+        "header": f"header{suffix}",
+    }.get(media_type, f"{uuid.uuid4().hex}{suffix}")
     target_path = target_dir / filename
     target_path.write_bytes(content)
-    return f"{MEDIA_URL_PREFIX}/{user_id}/{media_type}/{filename}"
+    return f"{MEDIA_URL_PREFIX}/public/users/{user_id}/{media_type}/{filename}"
 
 
 async def _build_activity_feed(db: AsyncSession, runner_id) -> list[ActivityFeedItem]:

@@ -1,5 +1,35 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'https://api.ontrail.tech';
 
+const MEDIA_KEYS = new Set(['avatar_url', 'header_image_url', 'avatarUrl', 'headerImageUrl']);
+
+function normalizeMediaUrl(value: unknown): unknown {
+  if (typeof value !== 'string' || !value.startsWith('/media/')) {
+    return value;
+  }
+
+  return `${API_BASE}${value}`;
+}
+
+function normalizeApiData<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeApiData(entry)) as T;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const normalizedEntries = Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+    if (MEDIA_KEYS.has(key)) {
+      return [key, normalizeMediaUrl(entry)];
+    }
+
+    return [key, normalizeApiData(entry)];
+  });
+
+  return Object.fromEntries(normalizedEntries) as T;
+}
+
 // --- Auth response type used by most auth endpoints ---
 export interface AuthUser {
   id: string;
@@ -87,7 +117,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         const err = await retryRes.json().catch(() => ({ detail: retryRes.statusText }));
         throw new Error(err.detail || 'Request failed');
       }
-      return retryRes.json();
+      const retryData = await retryRes.json();
+      return normalizeApiData(retryData as T);
     }
     // Refresh failed — clear tokens and redirect to home
     localStorage.removeItem(TOKEN_KEY);
@@ -100,7 +131,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || 'Request failed');
   }
-  return res.json();
+  const data = await res.json();
+  return normalizeApiData(data as T);
 }
 
 export const api = {

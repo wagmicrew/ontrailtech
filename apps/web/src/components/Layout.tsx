@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { ConnectKitButton } from 'connectkit';
 import { motion, AnimatePresence } from 'framer-motion';
+import { QRCodeSVG } from 'qrcode.react';
 
 const ExploreIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -231,8 +232,11 @@ export default function Layout() {
         </div>
       </nav>
 
-      <footer className={`hidden md:block bg-white/50 border-t border-gray-100 text-center text-xs text-gray-400 py-6 ${location.pathname === '/' ? '!hidden' : ''}`}>
-        <p>OnTrail — Web3 SocialFi for Explorers • Built on Base</p>
+      <footer className={`hidden md:block bg-white/50 border-t border-gray-100 text-xs text-gray-400 py-6 ${location.pathname === '/' ? '!hidden' : ''}`}>
+        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
+          <p>OnTrail — Web3 SocialFi for Explorers • Built on Base</p>
+          <ExpoQRFooter />
+        </div>
       </footer>
     </div>
   );
@@ -245,5 +249,53 @@ function MenuLink({ to, icon, label, onClick }: { to: string; icon: ReactNode; l
       <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-gray-500">{icon}</span>
       <span className="translate-y-[1px]">{label}</span>
     </Link>
+  );
+}
+
+const API_BASE = import.meta.env.VITE_API_URL || 'https://api.ontrail.tech';
+
+function ExpoQRFooter() {
+  const [expoUrl, setExpoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/expo/status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data.running && data.url) {
+          setExpoUrl(data.url);
+        }
+      } catch {
+        // Expo status unavailable — don't show QR
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!expoUrl) return null;
+
+  return (
+    <div className="hidden md:flex items-center gap-4">
+      <QRCodeSVG
+        value={expoUrl}
+        size={120}
+        level="M"
+        bgColor="transparent"
+        fgColor="#374151"
+      />
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium text-gray-600">Try the mobile app</span>
+        <a
+          href={expoUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-green-600 hover:text-green-700 transition-colors"
+        >
+          expo.ontrail.tech
+        </a>
+      </div>
+    </div>
   );
 }

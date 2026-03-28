@@ -3,6 +3,10 @@ import { api, AuthResponse, AuthUser } from '../lib/api';
 import AuthModal from '../components/AuthModal';
 import OnboardingWizard from '../components/OnboardingWizard';
 
+function isOnboardingComplete(user: AuthUser): boolean {
+  return Boolean(user.onboarding_completed || user.username?.trim());
+}
+
 interface AuthState {
   isConnected: boolean;
   isLoading: boolean;
@@ -67,7 +71,7 @@ function hydrateFromUser(
   setters.setWallet(user.wallet_address);
   setters.setRoles(user.roles || []);
   setters.setAvatarUrl(user.avatar_url);
-  setters.setOnboardingCompleted(user.onboarding_completed);
+  setters.setOnboardingCompleted(isOnboardingComplete(user));
   setters.setIsConnected(true);
 }
 

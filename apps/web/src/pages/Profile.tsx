@@ -1,7 +1,38 @@
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, type AuthUser } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+
+const PROFILE_CROP_SIZE = 320;
+
+type CropPosition = {
+  x: number;
+  y: number;
+};
+
+type ProfileImageDraft = {
+  file: File;
+  previewUrl: string;
+};
+
+function centerCropPosition(width: number, height: number) {
+  return {
+    x: (PROFILE_CROP_SIZE - width) / 2,
+    y: (PROFILE_CROP_SIZE - height) / 2,
+  };
+}
+
+function clampCropPosition(position: CropPosition, width: number, height: number): CropPosition {
+  const minX = width > PROFILE_CROP_SIZE ? PROFILE_CROP_SIZE - width : (PROFILE_CROP_SIZE - width) / 2;
+  const maxX = width > PROFILE_CROP_SIZE ? 0 : (PROFILE_CROP_SIZE - width) / 2;
+  const minY = height > PROFILE_CROP_SIZE ? PROFILE_CROP_SIZE - height : (PROFILE_CROP_SIZE - height) / 2;
+  const maxY = height > PROFILE_CROP_SIZE ? 0 : (PROFILE_CROP_SIZE - height) / 2;
+
+  return {
+    x: Math.min(maxX, Math.max(minX, position.x)),
+    y: Math.min(maxY, Math.max(minY, position.y)),
+  };
+}
 
 type RunnerProfile = {
   id: string;
@@ -89,6 +120,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [uploadingProfile, setUploadingProfile] = useState(false);
   const [uploadingHeader, setUploadingHeader] = useState(false);
+  const [profileImageDraft, setProfileImageDraft] = useState<ProfileImageDraft | null>(null);
   const [purchasingSlug, setPurchasingSlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -225,6 +257,45 @@ export default function Profile() {
     }
   }
 
+  function closeProfileImageDraft() {
+    setProfileImageDraft((current) => {
+      if (current) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return null;
+    });
+  }
+
+  function handleProfileImageSelected(file: File | null) {
+    if (!file) return;
+
+    setError(null);
+    setNotice(null);
+    setProfileImageDraft((current) => {
+      if (current) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+
+      return {
+        file,
+        previewUrl: URL.createObjectURL(file),
+      };
+    });
+  }
+
+  async function handleProfileCropConfirm(file: File) {
+    await handleUpload(file, 'profile');
+    closeProfileImageDraft();
+  }
+
+  useEffect(() => {
+    return () => {
+      if (profileImageDraft) {
+        URL.revokeObjectURL(profileImageDraft.previewUrl);
+      }
+    };
+  }, [profileImageDraft]);
+
   async function handlePurchase(itemSlug: string) {
     if (!catalog) return;
     setPurchasingSlug(itemSlug);
@@ -303,6 +374,7 @@ export default function Profile() {
             uploadingHeader={uploadingHeader}
             onChange={setForm}
             onSave={handleSaveProfile}
+            onProfileImageSelect={handleProfileImageSelected}
             onUpload={handleUpload}
           />
         )}
@@ -316,6 +388,15 @@ export default function Profile() {
           />
         )}
       </div>
+
+      {profileImageDraft && (
+        <ProfileImageCropModal
+          draft={profileImageDraft}
+          loading={uploadingProfile}
+          onCancel={closeProfileImageDraft}
+          onConfirm={handleProfileCropConfirm}
+        />
+      )}
     </SectionShell>
   );
 }
@@ -472,6 +553,7 @@ function EditPanel({
   uploadingHeader,
   onChange,
   onSave,
+  onProfileImageSelect,
   onUpload,
 }: {
   form: { username: string; email: string; bio: string; location: string; preferred_reward_wallet: string };
@@ -481,6 +563,7 @@ function EditPanel({
   uploadingHeader: boolean;
   onChange: Dispatch<SetStateAction<{ username: string; email: string; bio: string; location: string; preferred_reward_wallet: string }>>;
   onSave: () => Promise<void>;
+  onProfileImageSelect: (file: File | null) => void;
   onUpload: (file: File | null, type: 'profile' | 'header') => Promise<void>;
 }) {
   return (
@@ -517,10 +600,10 @@ function EditPanel({
         <div className="space-y-6">
           <UploadCard
             title="Profile image"
-            description={`Remaining paid changes: ${me.profile_image_upload_credits || 0}`}
+            description={`Square crop before upload. Remaining paid changes: ${me.profile_image_upload_credits || 0}`}
             imageUrl={me.avatar_url || null}
             loading={uploadingProfile}
-            onFile={(file) => onUpload(file, 'profile')}
+            onFile={onProfileImageSelect}
           />
 
           <UploadCard
@@ -686,8 +769,235 @@ function UploadCard({ title, description, imageUrl, loading, onFile, banner }: {
       </div>
       <label className="inline-flex cursor-pointer rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
         {loading ? 'Uploading...' : 'Choose image'}
-        <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => onFile(event.target.files?.[0] || null)} disabled={loading} />
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0] || null;
+            onFile(file);
+            event.target.value = '';
+          }}
+          disabled={loading}
+        />
       </label>
+    </div>
+  );
+}
+
+function ProfileImageCropModal({
+  draft,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  draft: ProfileImageDraft;
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: (file: File) => Promise<void>;
+}) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const dragStateRef = useRef<{ pointerId: number; startX: number; startY: number; startPosition: CropPosition } | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState<CropPosition>({ x: 0, y: 0 });
+  const [submitting, setSubmitting] = useState(false);
+
+  const baseScale = useMemo(() => {
+    if (!naturalSize) return 1;
+    return Math.max(PROFILE_CROP_SIZE / naturalSize.width, PROFILE_CROP_SIZE / naturalSize.height);
+  }, [naturalSize]);
+
+  const renderedWidth = naturalSize ? naturalSize.width * baseScale * zoom : PROFILE_CROP_SIZE;
+  const renderedHeight = naturalSize ? naturalSize.height * baseScale * zoom : PROFILE_CROP_SIZE;
+
+  useEffect(() => {
+    if (!naturalSize) return;
+    setPosition(centerCropPosition(renderedWidth, renderedHeight));
+  }, [draft.previewUrl, naturalSize?.width, naturalSize?.height]);
+
+  useEffect(() => {
+    if (!naturalSize) return;
+    setPosition((current) => clampCropPosition(current, renderedWidth, renderedHeight));
+  }, [renderedWidth, renderedHeight, naturalSize]);
+
+  async function handleConfirm() {
+    if (!imageRef.current) return;
+
+    setSubmitting(true);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('Could not prepare image crop');
+      }
+
+      const scaleToCanvas = canvas.width / PROFILE_CROP_SIZE;
+      context.drawImage(
+        imageRef.current,
+        position.x * scaleToCanvas,
+        position.y * scaleToCanvas,
+        renderedWidth * scaleToCanvas,
+        renderedHeight * scaleToCanvas,
+      );
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/png', 0.92);
+      });
+
+      if (!blob) {
+        throw new Error('Could not export cropped image');
+      }
+
+      const croppedFile = new File(
+        [blob],
+        `${draft.file.name.replace(/\.[^.]+$/, '') || 'profile-image'}-cropped.png`,
+        { type: 'image/png' },
+      );
+
+      await onConfirm(croppedFile);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-3xl rounded-[32px] bg-white p-6 shadow-2xl">
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <div className="flex-1">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-600">Profile image crop</p>
+            <h2 className="text-2xl font-black text-slate-900">Crop your avatar before upload</h2>
+            <p className="mt-2 text-sm text-slate-500">Drag to reposition and use zoom to frame the part of the image that should become your public avatar.</p>
+
+            <div className="mt-6 rounded-[28px] border border-slate-200 bg-slate-950/95 p-5 text-white">
+              <div
+                className="relative mx-auto overflow-hidden rounded-[28px] bg-slate-900"
+                style={{ width: PROFILE_CROP_SIZE, height: PROFILE_CROP_SIZE, touchAction: 'none' }}
+                onPointerDown={(event) => {
+                  dragStateRef.current = {
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startPosition: position,
+                  };
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                  if (!dragStateRef.current || dragStateRef.current.pointerId !== event.pointerId) return;
+
+                  const nextPosition = clampCropPosition(
+                    {
+                      x: dragStateRef.current.startPosition.x + (event.clientX - dragStateRef.current.startX),
+                      y: dragStateRef.current.startPosition.y + (event.clientY - dragStateRef.current.startY),
+                    },
+                    renderedWidth,
+                    renderedHeight,
+                  );
+
+                  setPosition(nextPosition);
+                }}
+                onPointerUp={(event) => {
+                  if (dragStateRef.current?.pointerId === event.pointerId) {
+                    dragStateRef.current = null;
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                }}
+                onPointerLeave={(event) => {
+                  if (dragStateRef.current?.pointerId === event.pointerId && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    dragStateRef.current = null;
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                }}
+              >
+                <img
+                  ref={imageRef}
+                  src={draft.previewUrl}
+                  alt="Crop preview"
+                  className="absolute select-none object-cover"
+                  draggable={false}
+                  style={{
+                    left: position.x,
+                    top: position.y,
+                    width: renderedWidth,
+                    height: renderedHeight,
+                    maxWidth: 'none',
+                  }}
+                  onLoad={(event) => {
+                    setNaturalSize({
+                      width: event.currentTarget.naturalWidth,
+                      height: event.currentTarget.naturalHeight,
+                    });
+                  }}
+                />
+                <div className="pointer-events-none absolute inset-0 rounded-[28px] border border-white/15" />
+                <div className="pointer-events-none absolute inset-5 rounded-full border-2 border-white/80 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)]" />
+              </div>
+
+              <div className="mt-5 space-y-2">
+                <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-white/70">
+                  <span>Zoom</span>
+                  <span>{zoom.toFixed(2)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="0.01"
+                  value={zoom}
+                  onChange={(event) => setZoom(Number(event.target.value))}
+                  className="w-full accent-emerald-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full max-w-sm rounded-[28px] bg-slate-50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Preview</p>
+            <div className="mt-4 flex justify-center">
+              <div className="h-32 w-32 overflow-hidden rounded-full ring-4 ring-white shadow-lg">
+                <img
+                  src={draft.previewUrl}
+                  alt="Avatar preview"
+                  className="select-none object-cover"
+                  draggable={false}
+                  style={{
+                    width: renderedWidth,
+                    height: renderedHeight,
+                    maxWidth: 'none',
+                    transform: `translate(${position.x}px, ${position.y}px)`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-3 text-sm text-slate-500">
+              <p>The cropped image is exported as a square PNG and displayed as a circular avatar throughout the app.</p>
+              <p>Uploaded avatars are stored under a stable public account path so the current image URL remains tied to the account.</p>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={onCancel}
+                disabled={loading || submitting}
+                className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={loading || submitting || !naturalSize}
+                className="flex-1 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading || submitting ? 'Uploading...' : 'Crop and upload'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -55,6 +55,10 @@ class GoogleAuthRequest(BaseModel):
     id_token: str
 
 
+class AppleAuthRequest(BaseModel):
+    identity_token: str
+
+
 class ChallengeRequest(BaseModel):
     wallet_address: str
 
@@ -347,6 +351,60 @@ async def google_auth(
     else:
         # Auto-create user
         user = User(email=google_email, google_id=google_id)
+        db.add(user)
+        await db.flush()
+
+    return await build_auth_response(user, db)
+
+
+# ── 4.5b  POST /auth/apple — Apple Sign-In ─────────────────────────
+
+
+@router.post("/apple", response_model=AuthResponse)
+async def apple_auth(
+    req: AppleAuthRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify Apple identity token and return AuthResponse."""
+    import jwt as pyjwt
+    from jwt import PyJWKClient
+
+    try:
+        # Fetch Apple's public keys and decode the identity token
+        jwk_client = PyJWKClient("https://appleid.apple.com/auth/keys")
+        signing_key = jwk_client.get_signing_key_from_jwt(req.identity_token)
+
+        payload = pyjwt.decode(
+            req.identity_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=settings.apple_client_id if settings.apple_client_id else None,
+            issuer="https://appleid.apple.com",
+            options={
+                "verify_aud": bool(settings.apple_client_id),
+            },
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+
+    apple_email = payload.get("email")
+    apple_sub = payload.get("sub")
+
+    if not apple_sub:
+        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+
+    # Find existing user by apple_id (stored in google_id field pattern) or email
+    # Use a dedicated lookup: check email first, then create
+    if apple_email:
+        apple_email = apple_email.strip().lower()
+        result = await db.execute(select(User).where(User.email == apple_email))
+        user = result.scalar_one_or_none()
+    else:
+        user = None
+
+    if not user:
+        # Auto-create user with whatever info Apple provided
+        user = User(email=apple_email)
         db.add(user)
         await db.flush()
 

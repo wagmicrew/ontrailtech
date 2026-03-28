@@ -10,16 +10,6 @@ import App from './App';
 import './index.css';
 import './i18n';
 
-const adobeFontsKitId = import.meta.env.VITE_ADOBE_FONTS_KIT_ID;
-
-if (adobeFontsKitId && !document.querySelector(`link[data-adobe-kit="${adobeFontsKitId}"]`)) {
-  const adobeFontsLink = document.createElement('link');
-  adobeFontsLink.rel = 'stylesheet';
-  adobeFontsLink.href = `https://use.typekit.net/${adobeFontsKitId}.css`;
-  adobeFontsLink.setAttribute('data-adobe-kit', adobeFontsKitId);
-  document.head.appendChild(adobeFontsLink);
-}
-
 const config = createConfig(
   getDefaultConfig({
     chains: [base, baseSepolia],

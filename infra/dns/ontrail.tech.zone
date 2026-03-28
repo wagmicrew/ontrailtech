@@ -4,7 +4,7 @@
 
 $TTL 3600
 @   IN  SOA ns1.loppio.se. admin.ontrail.tech. (
-        2026032701  ; Serial (YYYYMMDDNN)
+        2026032702  ; Serial (YYYYMMDDNN)
         3600        ; Refresh
         900         ; Retry
         604800      ; Expire
@@ -20,6 +20,7 @@ $TTL 3600
 www     IN  A   85.208.51.194
 app     IN  A   85.208.51.194
 api     IN  A   85.208.51.194
+expo    IN  A   85.208.51.194
 data    IN  A   85.208.51.194
 mail    IN  A   85.208.51.194
 smtp    IN  A   85.208.51.194

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
     google_client_id: str = ""
     google_client_secret: str = ""
+    apple_client_id: str = ""
     smtp_host: str = "localhost"
     smtp_port: int = 587
     smtp_user: str = ""
