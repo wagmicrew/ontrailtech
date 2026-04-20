@@ -4,31 +4,57 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios"
+    "start": "node ../../scripts/start-expo.js",
+    "android": "node ../../scripts/start-expo.js --android",
+    "ios": "node ../../scripts/start-expo.js --ios",
+    "port:check": "node ../../scripts/start-expo.js --check"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native-worklets"
+      ]
+    },
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-google-fit",
+          "react-native-health"
+        ]
+      }
+    }
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^3.0.2",
-    "@react-native-community/netinfo": "^12.0.1",
-    "@react-navigation/native": "^6.1.0",
-    "expo": "~52.0.0",
-    "expo-apple-authentication": "^55.0.9",
-    "expo-auth-session": "^55.0.9",
-    "expo-location": "~17.0.0",
-    "expo-notifications": "^55.0.13",
-    "expo-router": "~4.0.0",
-    "expo-secure-store": "^55.0.9",
-    "expo-sensors": "~13.0.0",
-    "qrcode.react": "^4.2.0",
-    "react": "18.3.1",
-    "react-native": "0.76.0",
+    "@expo/metro-runtime": "~6.1.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/netinfo": "11.4.1",
+    "@react-navigation/native": "^7.0.14",
+    "expo": "^54.0.0",
+    "expo-apple-authentication": "~8.0.7",
+    "expo-auth-session": "~7.0.8",
+    "expo-constants": "~18.0.9",
+    "expo-linking": "~8.0.8",
+    "expo-location": "~19.0.7",
+    "expo-notifications": "~0.32.12",
+    "expo-router": "~6.0.23",
+    "expo-secure-store": "~15.0.7",
+    "expo-sensors": "~15.0.7",
+    "metro-runtime": "^0.83.5",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-gesture-handler": "~2.28.0",
     "react-native-google-fit": "^0.22.1",
     "react-native-health": "^1.19.0",
-    "react-native-maps": "^1.27.2"
+    "react-native-maps": "1.20.1",
+    "react-native-reanimated": "4.1.1",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
+    "react-native-web": "^0.21.0",
+    "react-native-worklets": "0.5.1"
   },
   "devDependencies": {
-    "@types/react": "~18.3.0",
+    "@types/react": "~19.1.10",
     "typescript": "^5.5.0"
   }
 }

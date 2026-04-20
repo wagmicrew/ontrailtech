@@ -153,6 +153,10 @@ async def unregister_device_token(
 class ExpoPublicStatus(BaseModel):
     running: bool
     url: str
+    deep_link: str = ""
+    web_url: str = ""
+    manifest_url: str = ""
+    mode: str = "stopped"
 
 
 @router.get("/expo/status", response_model=ExpoPublicStatus)
@@ -162,20 +166,44 @@ async def expo_public_status():
     import json
     import subprocess
 
+    web_url = "https://expo.ontrail.tech"
+    manifest_url = "https://expo.ontrail.tech/index.exp"
+    deep_link = "exps://expo.ontrail.tech/index.exp"
+
     try:
         result = subprocess.run(
             ["pm2", "jlist"],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode != 0:
-            return ExpoPublicStatus(running=False, url="")
+            return ExpoPublicStatus(running=False, url="", deep_link="", web_url=web_url, manifest_url=manifest_url, mode="stopped")
 
         processes = json.loads(result.stdout)
         for proc in processes:
             if proc.get("name") == "ontrail-expo":
-                status = proc.get("pm2_env", {}).get("status", "")
+                pm2_env = proc.get("pm2_env", {})
+                status = pm2_env.get("status", "")
+                args = pm2_env.get("args", "")
+                if isinstance(args, list):
+                    args = " ".join(args)
+
+                mode = "proxy"
+                if "--tunnel" in args:
+                    mode = "tunnel"
+                elif "--host localhost" in args or "--localhost" in args:
+                    mode = "local"
+                elif "--host lan" in args or "--lan" in args:
+                    mode = "lan"
+
                 if status == "online":
-                    return ExpoPublicStatus(running=True, url="https://expo.ontrail.tech")
-        return ExpoPublicStatus(running=False, url="")
+                    return ExpoPublicStatus(
+                        running=True,
+                        url=deep_link,
+                        deep_link=deep_link,
+                        web_url=web_url,
+                        manifest_url=manifest_url,
+                        mode=mode,
+                    )
+        return ExpoPublicStatus(running=False, url="", deep_link="", web_url=web_url, manifest_url=manifest_url, mode="stopped")
     except Exception:
-        return ExpoPublicStatus(running=False, url="")
+        return ExpoPublicStatus(running=False, url="", deep_link="", web_url=web_url, manifest_url=manifest_url, mode="stopped")

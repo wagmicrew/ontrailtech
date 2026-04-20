@@ -67,20 +67,24 @@ export default function Layout() {
   const avatarLetter = username?.[0]?.toUpperCase() || email?.[0]?.toUpperCase() || '?';
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-green-50/30">
-      <nav className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-gray-100 px-6 py-3">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-white to-emerald-50/40">
+      <nav className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/85 px-6 py-3 backdrop-blur-xl shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
         <div className="max-w-7xl mx-auto flex items-center">
-          <Link to="/" className="flex items-center gap-2 group">
+          <Link to="/" className="flex items-center gap-3 group">
             <img src="/ontrail-logo.png" alt="OnTrail" className="h-6 opacity-90" />
+            <div className="hidden lg:block">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-600">OnTrail</p>
+              <p className="text-xs text-slate-500">Outdoor reputation platform</p>
+            </div>
           </Link>
 
           <div className="hidden md:flex items-center gap-1 ml-8">
             {navItems.map(({ path, label, icon }) => (
               <Link key={path} to={path}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium leading-none transition-all ${
+                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium leading-none transition-all ${
                   location.pathname === path
-                    ? 'bg-green-50 text-green-700'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}>
                 <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
                 <span className="translate-y-[1px]">{label.startsWith('nav.') ? t(label) : label}</span>
@@ -191,13 +195,13 @@ export default function Layout() {
               /* Not connected */
               <div className="flex items-center gap-2">
                 <button onClick={login}
-                  className="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:shadow-lg hover:shadow-green-500/25 transition-all">
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-all hover:-translate-y-0.5 hover:bg-emerald-600 hover:shadow-lg hover:shadow-emerald-500/20">
                   Get Started
                 </button>
                 <ConnectKitButton.Custom>
                   {({ show }) => (
                     <button onClick={show}
-                      className="hidden md:block border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition">
+                      className="hidden md:block rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
                       Connect Wallet
                     </button>
                   )}
@@ -256,6 +260,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://api.ontrail.tech';
 
 function ExpoQRFooter() {
   const [expoUrl, setExpoUrl] = useState<string | null>(null);
+  const [expoWebUrl, setExpoWebUrl] = useState<string>('https://expo.ontrail.tech');
 
   useEffect(() => {
     let cancelled = false;
@@ -264,8 +269,11 @@ function ExpoQRFooter() {
         const res = await fetch(`${API_BASE}/expo/status`);
         if (!res.ok) return;
         const data = await res.json();
-        if (!cancelled && data.running && data.url) {
-          setExpoUrl(data.url);
+        const deepLink = data.deep_link || data.url;
+        const webUrl = data.web_url || 'https://expo.ontrail.tech';
+        if (!cancelled && data.running && deepLink) {
+          setExpoUrl(deepLink);
+          setExpoWebUrl(webUrl);
         }
       } catch {
         // Expo status unavailable — don't show QR
@@ -288,7 +296,7 @@ function ExpoQRFooter() {
       <div className="flex flex-col gap-1">
         <span className="text-sm font-medium text-gray-600">Try the mobile app</span>
         <a
-          href={expoUrl}
+          href={expoWebUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="text-green-600 hover:text-green-700 transition-colors"

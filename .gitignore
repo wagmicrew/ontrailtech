@@ -16,5 +16,7 @@ coverage/
 artifacts/
 cache/
 typechain-types/
+*.tsbuildinfo
+apps/mobile/.expo/
 *.swp
 *.swo

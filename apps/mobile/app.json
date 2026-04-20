@@ -11,19 +11,25 @@
         {
           "locationAlwaysAndWhenInUsePermission": "OnTrail needs your location to track routes and discover POIs."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "ios": {
       "bundleIdentifier": "tech.ontrail.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "OnTrail needs your location to discover nearby POIs.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "OnTrail needs background location to track your routes.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
       "package": "tech.ontrail.app",
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION"]
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
     }
   }
 }
