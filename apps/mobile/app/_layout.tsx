@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { authManager } from '../lib/authManager';
+import { startNetInfoListener, stopNetInfoListener } from '../lib/offlineQueue';
 import type { AuthUser } from '../lib/types';
 
 export default function RootLayout() {
@@ -12,6 +13,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     const unsubscribe = authManager.subscribeAuthState(setUser);
+    startNetInfoListener();
 
     (async () => {
       try {
@@ -24,7 +26,10 @@ export default function RootLayout() {
       }
     })();
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      stopNetInfoListener();
+    };
   }, []);
 
   useEffect(() => {

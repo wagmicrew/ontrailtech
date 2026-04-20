@@ -269,6 +269,23 @@ export const apiClient = {
   getRoutesByRunner: (username: string) =>
     request<RouteSummary[]>(`/route/by-runner/${username}`),
 
+  discoverRoutes: () => request<RouteSummary[]>('/route/discover'),
+
+  getRouteById: (routeId: string) =>
+    request<RouteSummary>(`/route/${routeId}`),
+
+  startRoute: (routeId: string) =>
+    request<{ session_id: string; status: string }>('/route/start', {
+      method: 'POST',
+      body: JSON.stringify({ route_id: routeId }),
+    }),
+
+  completeRoute: (routeId: string, sessionId: string) =>
+    request<{ route_nft_id: string; completion_count: number }>('/route/complete', {
+      method: 'POST',
+      body: JSON.stringify({ route_id: routeId, session_id: sessionId }),
+    }),
+
   // ── Profile ──────────────────────────────────────────────────────────
   getMe: () => request<AuthUser>('/users/me'),
 

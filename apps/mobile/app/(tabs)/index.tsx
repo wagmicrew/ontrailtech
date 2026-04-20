@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Linking,
   RefreshControl,
@@ -18,6 +19,7 @@ import * as Location from 'expo-location';
 import * as stepTracker from '../../lib/stepTracker';
 import { apiClient } from '../../lib/apiClient';
 import { STORAGE_KEYS, POI_NEARBY_RADIUS_KM } from '../../lib/constants';
+import { getDownloadedTrailIds, saveDownloadedTrail } from '../../lib/trailManager';
 import type { AuthUser, POI, RouteSummary, RunnerProfile } from '../../lib/types';
 
 const RARITY_COLORS: Record<string, string> = {
@@ -43,6 +45,7 @@ export default function HomeScreen() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [runner, setRunner] = useState<RunnerProfile | null>(null);
   const [routes, setRoutes] = useState<RouteSummary[]>([]);
+  const [downloadedTrailIds, setDownloadedTrailIds] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -101,9 +104,14 @@ export default function HomeScreen() {
         ? apiClient.getRunner(me.username).catch(() => null as RunnerProfile | null)
         : Promise.resolve(null as RunnerProfile | null);
 
-      const [myRoutes, runnerProfile] = await Promise.all([routePromise, runnerPromise]);
+      const [myRoutes, runnerProfile, downloadedIds] = await Promise.all([
+        routePromise,
+        runnerPromise,
+        getDownloadedTrailIds().catch(() => [] as string[]),
+      ]);
       setRoutes(myRoutes);
       setRunner(runnerProfile);
+      setDownloadedTrailIds(downloadedIds);
     } catch {
       // ignore network failures and keep the app usable
     }
@@ -147,6 +155,17 @@ export default function HomeScreen() {
     await loadData(online);
     setRefreshing(false);
   }, [loadData]);
+
+  const handleDownloadTrail = useCallback(async (route: RouteSummary) => {
+    try {
+      const fullRoute = route.route_points?.length ? route : await apiClient.getRouteById(route.id);
+      await saveDownloadedTrail(fullRoute);
+      setDownloadedTrailIds((prev) => (prev.includes(route.id) ? prev : [...prev, route.id]));
+      Alert.alert('Trail saved offline', 'Map data, route line, and POIs are now available without network access.');
+    } catch (err: any) {
+      Alert.alert('Download failed', err?.message || 'Could not save this trail yet.');
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -203,7 +222,7 @@ export default function HomeScreen() {
 
       <Text style={styles.sectionTitle}>Quick actions</Text>
       <View style={styles.actionGrid}>
-        <ActionTile title="Trail Studio" subtitle="Create and own routes" onPress={() => router.push('/(tabs)/studio')} />
+        <ActionTile title="Trail Lab" subtitle="Create and own routes" onPress={() => router.push('/(tabs)/studio')} />
         <ActionTile title="Explore POIs" subtitle="Find new places" onPress={() => router.push('/(tabs)/explore')} />
         <ActionTile title="FriendPass" subtitle="Sell supporter access" onPress={() => router.push('/(tabs)/profile')} />
         <ActionTile title="Tip Tokens" subtitle="Open token pages" onPress={() => Linking.openURL('https://app.ontrail.tech/tokens')} />
@@ -229,21 +248,32 @@ export default function HomeScreen() {
       <Text style={styles.sectionTitle}>My trails</Text>
       {routes.length === 0 ? (
         <View style={styles.card}>
-          <Text style={styles.emptyText}>No routes yet. Open Trail Studio to build your first saved route.</Text>
+          <Text style={styles.emptyText}>No routes yet. Open Trail Lab to build your first saved route.</Text>
         </View>
       ) : (
-        routes.slice(0, 3).map((route) => (
-          <View key={route.id} style={styles.routeCard}>
-            <View style={styles.routeCardHeader}>
-              <Text style={styles.routeName}>{route.name}</Text>
-              <Text style={styles.routeBadge}>{route.build_mode || 'manual'}</Text>
+        routes.slice(0, 3).map((route) => {
+          const isDownloaded = downloadedTrailIds.includes(route.id);
+          return (
+            <View key={route.id} style={styles.routeCard}>
+              <View style={styles.routeCardHeader}>
+                <Text style={styles.routeName}>{route.name}</Text>
+                <Text style={styles.routeBadge}>{route.build_mode || 'manual'}</Text>
+              </View>
+              <Text style={styles.routeMeta}>
+                {route.distance_km.toFixed(1)} km · {route.poi_count || 0} POIs · {route.is_minted ? 'Minted' : 'Draft'}
+              </Text>
+              <Text style={styles.routeMeta}>{route.start_poi_name || 'Start'} → {route.end_poi_name || 'Finish'}</Text>
+              <View style={styles.routeActionRow}>
+                <TouchableOpacity style={[styles.routeActionButton, styles.runButton]} onPress={() => router.push({ pathname: '/trail-run', params: { routeId: route.id } })}>
+                  <Text style={styles.routeActionText}>Run with App</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.routeActionButton, isDownloaded ? styles.savedButton : styles.downloadButton]} onPress={() => handleDownloadTrail(route)}>
+                  <Text style={styles.routeActionText}>{isDownloaded ? 'Saved Offline' : 'Download Map'}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={styles.routeMeta}>
-              {route.distance_km.toFixed(1)} km · {route.poi_count || 0} POIs · {route.is_minted ? 'Minted' : 'Draft'}
-            </Text>
-            <Text style={styles.routeMeta}>{route.start_poi_name || 'Start'} → {route.end_poi_name || 'Finish'}</Text>
-          </View>
-        ))
+          );
+        })
       )}
 
       <Text style={styles.sectionTitle}>Nearby POIs</Text>
@@ -473,6 +503,31 @@ const styles = StyleSheet.create({
   routeMeta: {
     color: '#475569',
     marginTop: 4,
+  },
+  routeActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  routeActionButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  runButton: {
+    backgroundColor: '#10b981',
+  },
+  downloadButton: {
+    backgroundColor: '#1d4ed8',
+  },
+  savedButton: {
+    backgroundColor: '#0f172a',
+  },
+  routeActionText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
   },
   poiCard: {
     backgroundColor: '#fff',

@@ -20,6 +20,9 @@ export const STORAGE_KEYS = {
   CACHED_POIS: '@ontrail/cached_pois',
   CACHED_STEPS: '@ontrail/cached_steps',
   PUSH_TOKEN: '@ontrail/push_token',
+  DOWNLOADED_TRAILS: '@ontrail/downloaded_trails',
+  ACTIVE_TRAIL_RUN: '@ontrail/active_trail_run',
+  LOCAL_TRAIL_DRAFTS: '@ontrail/local_trail_drafts',
 } as const;
 
 // ── Sync intervals (milliseconds) ──────────────────────────────────────
@@ -49,6 +52,18 @@ export const GPS_HIGH_ACCURACY_THRESHOLD_M = 50;
 
 /** Default radius (km) for nearby POI queries */
 export const POI_NEARBY_RADIUS_KM = 10;
+
+/** Battery-safe route tracking update interval while a trail run is active */
+export const TRAIL_RUN_UPDATE_MS = 12 * 1000;
+
+/** Minimum movement before the next trail update is processed */
+export const TRAIL_RUN_DISTANCE_INTERVAL_M = 15;
+
+/** Distance from the route line that triggers a guidance correction */
+export const TRAIL_OFF_ROUTE_WARNING_M = 80;
+
+/** Checkpoint auto-check radius while running a trail */
+export const TRAIL_CHECKPOINT_RADIUS_M = 50;
 
 // ── Offline queue ──────────────────────────────────────────────────────
 

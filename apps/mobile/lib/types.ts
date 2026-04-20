@@ -100,6 +100,7 @@ export interface RouteCheckpoint {
   altitude?: number | null;
   distance_from_start_m?: number;
   is_required?: boolean;
+  role?: 'start' | 'checkpoint' | 'finish';
 }
 
 export interface RouteSummary {
@@ -116,6 +117,13 @@ export interface RouteSummary {
   poi_count?: number;
   start_poi_name?: string | null;
   end_poi_name?: string | null;
+  estimated_duration_min?: number;
+  route_points?: RoutePoint[];
+  checkpoints?: RouteCheckpoint[];
+  poi_ids?: string[];
+  downloaded_at?: string | null;
+  local_only?: boolean;
+  sync_status?: 'pending' | 'synced';
 }
 
 export interface CreateRoutePayload {
@@ -177,6 +185,7 @@ export interface VerifyResult {
 /** Payload for POST /route/checkin */
 export interface CheckinPayload {
   poi_id: string;
+  session_id?: string;
   latitude: number;
   longitude: number;
   accuracy: number;

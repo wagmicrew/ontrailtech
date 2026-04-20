@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Switch,
@@ -10,12 +11,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import * as Location from 'expo-location';
 
 import PoiMap from '../../components/PoiMap';
 import { apiClient } from '../../lib/apiClient';
+import { enqueueIfOffline, isOnline } from '../../lib/cachedApi';
 import { calculateDistance } from '../../lib/gpsVerifier';
-import type { POI, RoutePoint, RouteSummary } from '../../lib/types';
+import { getLocalTrailDrafts, removeLocalTrailDraft, saveDownloadedTrail, saveLocalTrailDraft } from '../../lib/trailManager';
+import type { CreateRoutePayload, POI, RoutePoint, RouteSummary } from '../../lib/types';
 
 const DEFAULT_REGION = {
   latitude: 59.3293,
@@ -51,6 +55,42 @@ function distanceFromStart(routePoints: RoutePoint[], latitude: number, longitud
   );
 }
 
+function totalRouteDistanceKm(routePoints: RoutePoint[]): number {
+  if (routePoints.length < 2) return 0;
+  let total = 0;
+  for (let index = 1; index < routePoints.length; index += 1) {
+    total += calculateDistance(routePoints[index - 1], routePoints[index]);
+  }
+  return total / 1000;
+}
+
+function buildLocalRouteSummary(
+  payload: CreateRoutePayload,
+  routePoints: RoutePoint[],
+  selectedPois: POI[],
+): RouteSummary {
+  return {
+    id: `local-${Date.now()}`,
+    name: payload.name,
+    difficulty: payload.difficulty || 'moderate',
+    distance_km: Math.max(totalRouteDistanceKm(routePoints), 0.1),
+    completion_count: 0,
+    description: payload.description,
+    build_mode: payload.build_mode,
+    is_loop: payload.is_loop,
+    is_minted: payload.is_minted,
+    poi_count: selectedPois.length,
+    start_poi_name: selectedPois[0]?.name || null,
+    end_poi_name: selectedPois[selectedPois.length - 1]?.name || null,
+    estimated_duration_min: payload.estimated_duration_min,
+    route_points: payload.route_points || [],
+    checkpoints: payload.checkpoints || [],
+    poi_ids: payload.poi_ids,
+    local_only: true,
+    sync_status: 'pending',
+  };
+}
+
 export default function StudioScreen() {
   const mapRef = useRef<any>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
@@ -67,15 +107,31 @@ export default function StudioScreen() {
   const [region, setRegion] = useState(DEFAULT_REGION);
   const [pois, setPois] = useState<POI[]>([]);
   const [selectedPoiIds, setSelectedPoiIds] = useState<string[]>([]);
+  const [activePoiId, setActivePoiId] = useState<string | null>(null);
   const [routePoints, setRoutePoints] = useState<RoutePoint[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<RouteSummary[]>([]);
   const [poiDrafts, setPoiDrafts] = useState<Record<string, PoiDraft>>({});
   const [currentCoords, setCurrentCoords] = useState<Location.LocationObjectCoords | null>(null);
+  const [isOnlineState, setIsOnlineState] = useState(true);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
   const selectedPois = useMemo(
     () => selectedPoiIds.map((id) => pois.find((poi) => poi.id === id)).filter(Boolean) as POI[],
     [pois, selectedPoiIds],
   );
+
+  const activePoi = useMemo(
+    () => selectedPois.find((poi) => poi.id === activePoiId) || null,
+    [activePoiId, selectedPois],
+  );
+
+  const activePoiRole = activePoi
+    ? selectedPoiIds[0] === activePoi.id
+      ? 'start'
+      : selectedPoiIds[selectedPoiIds.length - 1] === activePoi.id
+        ? 'finish'
+        : 'checkpoint'
+    : null;
 
   const stopRecording = useCallback(() => {
     if (watchRef.current) {
@@ -87,10 +143,24 @@ export default function StudioScreen() {
 
   const fetchMyRoutes = useCallback(async () => {
     try {
-      const routes = await apiClient.getMyRoutes();
-      setSavedRoutes(routes);
+      const [routes, drafts] = await Promise.all([
+        apiClient.getMyRoutes().catch(() => [] as RouteSummary[]),
+        getLocalTrailDrafts().catch(() => [] as RouteSummary[]),
+      ]);
+
+      const syncedDraftIds = drafts
+        .filter((draft) => routes.some((route) => route.name === draft.name && Math.abs(route.distance_km - draft.distance_km) < 0.25))
+        .map((draft) => draft.id);
+
+      await Promise.all(syncedDraftIds.map((id) => removeLocalTrailDraft(id)));
+
+      const remainingDrafts = drafts.filter((draft) => !syncedDraftIds.includes(draft.id));
+      setPendingSyncCount(remainingDrafts.length);
+      setSavedRoutes([...remainingDrafts, ...routes]);
     } catch {
-      // leave previous state intact
+      const drafts = await getLocalTrailDrafts().catch(() => [] as RouteSummary[]);
+      setPendingSyncCount(drafts.length);
+      setSavedRoutes(drafts);
     }
   }, []);
 
@@ -101,6 +171,15 @@ export default function StudioScreen() {
     } catch {
       // keep existing POIs if fetch fails
     }
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnlineState(!!(state.isConnected && state.isInternetReachable !== false));
+    });
+
+    void isOnline().then(setIsOnlineState).catch(() => undefined);
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -144,6 +223,21 @@ export default function StudioScreen() {
       stopRecording();
     };
   }, [fetchMyRoutes, fetchNearbyPois, stopRecording]);
+
+  useEffect(() => {
+    if (!activePoiId && selectedPoiIds.length > 0) {
+      setActivePoiId(selectedPoiIds[0]);
+    }
+    if (activePoiId && !selectedPoiIds.includes(activePoiId)) {
+      setActivePoiId(selectedPoiIds[0] || null);
+    }
+  }, [activePoiId, selectedPoiIds]);
+
+  useEffect(() => {
+    if (isOnlineState) {
+      void fetchMyRoutes();
+    }
+  }, [fetchMyRoutes, isOnlineState]);
 
   const addRoutePoint = useCallback((latitude: number, longitude: number, manual = false) => {
     setRoutePoints((prev) => [
@@ -230,13 +324,9 @@ export default function StudioScreen() {
     }
   }, [recording]);
 
-  const togglePoi = useCallback((poi: POI) => {
-    setSelectedPoiIds((prev) => (
-      prev.includes(poi.id)
-        ? prev.filter((id) => id !== poi.id)
-        : [...prev, poi.id]
-    ));
-
+  const handleSelectPoi = useCallback((poi: POI) => {
+    setActivePoiId(poi.id);
+    setSelectedPoiIds((prev) => (prev.includes(poi.id) ? prev : [...prev, poi.id]));
     setPoiDrafts((prev) => ({
       ...prev,
       [poi.id]: prev[poi.id] || {
@@ -245,6 +335,19 @@ export default function StudioScreen() {
         photo_url: '',
       },
     }));
+  }, []);
+
+  const removeSelectedPoi = useCallback((poiId: string) => {
+    setSelectedPoiIds((prev) => prev.filter((id) => id !== poiId));
+    setActivePoiId((current) => (current === poiId ? null : current));
+  }, []);
+
+  const setPoiRole = useCallback((poiId: string, role: 'start' | 'finish') => {
+    setSelectedPoiIds((prev) => {
+      const filtered = prev.filter((id) => id !== poiId);
+      return role === 'start' ? [poiId, ...filtered] : [...filtered, poiId];
+    });
+    setActivePoiId(poiId);
   }, []);
 
   const updatePoiDraft = useCallback((poiId: string, patch: Partial<PoiDraft>) => {
@@ -300,7 +403,7 @@ export default function StudioScreen() {
         role: index === 0 ? 'start' : index === selectedPois.length - 1 ? 'finish' : 'checkpoint',
       }));
 
-      const route = await apiClient.createRoute({
+      const payload: CreateRoutePayload = {
         name: routeName.trim(),
         description: routeDescription.trim(),
         difficulty,
@@ -311,14 +414,26 @@ export default function StudioScreen() {
         is_minted: isMinted,
         route_points: routePoints.slice(0, 300),
         checkpoints,
-      });
+      };
 
-      Alert.alert('Trail saved', `${route.name} is now stored and owned by your runner profile.`);
-      setSavedRoutes((prev) => [route, ...prev]);
+      if (await isOnline()) {
+        const route = await apiClient.createRoute(payload);
+        await saveDownloadedTrail(route);
+        Alert.alert('Trail Lab saved', `${route.name} was saved on your phone and synced to the database.`);
+      } else {
+        const localRoute = buildLocalRouteSummary(payload, routePoints, selectedPois);
+        await saveDownloadedTrail(localRoute);
+        await saveLocalTrailDraft(localRoute, payload);
+        await enqueueIfOffline<RouteSummary>('/route/create', 'POST', JSON.stringify(payload));
+        Alert.alert('Saved offline', 'The trail is stored on the device and will sync to the database when network returns.');
+      }
+
+      await fetchMyRoutes();
       setRouteName('');
       setRouteDescription('');
       setRoutePoints([]);
       setSelectedPoiIds([]);
+      setActivePoiId(null);
       setPoiDrafts({});
       stopRecording();
     } catch (err: any) {
@@ -326,7 +441,7 @@ export default function StudioScreen() {
     } finally {
       setSaving(false);
     }
-  }, [currentCoords?.altitude, difficulty, isLoop, isMinted, mode, poiDrafts, routeDescription, routeName, routePoints, selectedPoiIds, selectedPois, stopRecording]);
+  }, [currentCoords?.altitude, difficulty, fetchMyRoutes, isLoop, isMinted, mode, poiDrafts, routeDescription, routeName, routePoints, selectedPoiIds, selectedPois, stopRecording]);
 
   if (loading) {
     return (
@@ -339,11 +454,24 @@ export default function StudioScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
-        <Text style={styles.heroEyebrow}>Trail Studio</Text>
-        <Text style={styles.heroTitle}>Build routes with GPS, checkpoints, and POIs</Text>
+        <Text style={styles.heroEyebrow}>Trail Lab</Text>
+        <Text style={styles.heroTitle}>Build and edit trails with live POI drawers</Text>
         <Text style={styles.heroText}>
-          Choose Auto plus POI to record the real trail, or Manual plus POI to draw and drag your route points before saving.
+          Choose Auto plus POI to record the real trail, or Manual plus POI to draw and drag your route points before saving locally and syncing to the database.
         </Text>
+      </View>
+
+      <View style={styles.statusRow}>
+        <View style={[styles.statusPill, isOnlineState ? styles.statusPillOnline : styles.statusPillOffline]}>
+          <Text style={[styles.statusPillText, isOnlineState ? styles.statusPillTextOnline : styles.statusPillTextOffline]}>
+            {isOnlineState ? 'Online sync active' : 'Offline draft mode'}
+          </Text>
+        </View>
+        {pendingSyncCount > 0 ? (
+          <View style={styles.statusPill}>
+            <Text style={styles.statusPillText}>{pendingSyncCount} pending sync</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.modeRow}>
@@ -368,7 +496,7 @@ export default function StudioScreen() {
         onRegionChangeComplete={setRegion}
         pois={pois}
         getRarityColor={getRarityColor}
-        onSelectPoi={togglePoi}
+        onSelectPoi={handleSelectPoi}
         routePoints={routePoints}
         editableRoute={mode === 'manual'}
         onMapPress={handleManualTap}
@@ -380,6 +508,13 @@ export default function StudioScreen() {
           ? 'Tap the map to add line points and drag markers to reshape the path.'
           : 'Start recording, then use Snapshot to pin key moments and add required POI check-ins.'}
       </Text>
+
+      <View style={styles.formCard}>
+        <Text style={styles.sectionTitle}>Mobile telemetry</Text>
+        <Text style={styles.metaText}>Height: {Math.round(currentCoords?.altitude || 0)} m</Text>
+        <Text style={styles.metaText}>Tracked route distance: {totalRouteDistanceKm(routePoints).toFixed(2)} km</Text>
+        <Text style={styles.metaText}>Captured points: {routePoints.length}</Text>
+      </View>
 
       <View style={styles.actionRow}>
         {mode === 'auto' ? (
@@ -472,8 +607,8 @@ export default function StudioScreen() {
             return (
               <TouchableOpacity
                 key={poi.id}
-                style={[styles.poiChip, active && styles.poiChipActive]}
-                onPress={() => togglePoi(poi)}
+                style={[styles.poiChip, active && styles.poiChipActive, activePoiId === poi.id && styles.poiChipEditing]}
+                onPress={() => handleSelectPoi(poi)}
               >
                 <Text style={[styles.poiChipText, active && styles.poiChipTextActive]}>{poi.name}</Text>
               </TouchableOpacity>
@@ -482,41 +617,70 @@ export default function StudioScreen() {
         </View>
       </View>
 
-      {selectedPois.map((poi, index) => (
-        <View key={poi.id} style={styles.formCard}>
-          <Text style={styles.sectionTitle}>
-            {index === 0 ? 'Start POI' : index === selectedPois.length - 1 ? 'Finish POI' : 'Checkpoint POI'}
+      {activePoi ? (
+        <View style={styles.formCard}>
+          <Text style={styles.sectionTitle}>POI detail drawer</Text>
+          <Text style={styles.helperTextSecondary}>
+            Edit details, image, telemetry notes, and set this POI as the route start or finish.
           </Text>
+
+          {poiDrafts[activePoi.id]?.photo_url ? (
+            <Image source={{ uri: poiDrafts[activePoi.id]?.photo_url || '' }} style={styles.poiPreviewImage} />
+          ) : null}
+
+          <View style={styles.roleRow}>
+            <TouchableOpacity style={[styles.roleButton, activePoiRole === 'start' && styles.roleButtonActive]} onPress={() => setPoiRole(activePoi.id, 'start')}>
+              <Text style={[styles.roleButtonText, activePoiRole === 'start' && styles.roleButtonTextActive]}>Set as Start</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.roleButton, activePoiRole === 'finish' && styles.roleButtonActive]} onPress={() => setPoiRole(activePoi.id, 'finish')}>
+              <Text style={[styles.roleButtonText, activePoiRole === 'finish' && styles.roleButtonTextActive]}>Set as Finish</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.removePoiButton} onPress={() => removeSelectedPoi(activePoi.id)}>
+              <Text style={styles.removePoiButtonText}>Remove</Text>
+            </TouchableOpacity>
+          </View>
+
           <TextInput
             style={styles.input}
-            value={poiDrafts[poi.id]?.title || ''}
-            onChangeText={(value) => updatePoiDraft(poi.id, { title: value })}
+            value={poiDrafts[activePoi.id]?.title || activePoi.name}
+            onChangeText={(value) => updatePoiDraft(activePoi.id, { title: value })}
             placeholder="POI heading"
             placeholderTextColor="#94a3b8"
           />
           <TextInput
             style={[styles.input, styles.textarea]}
-            value={poiDrafts[poi.id]?.body || ''}
-            onChangeText={(value) => updatePoiDraft(poi.id, { body: value })}
+            value={poiDrafts[activePoi.id]?.body || activePoi.description || ''}
+            onChangeText={(value) => updatePoiDraft(activePoi.id, { body: value })}
             placeholder="Full POI story, notes, height, and why runners should stop here"
             placeholderTextColor="#94a3b8"
             multiline
           />
           <TextInput
             style={styles.input}
-            value={poiDrafts[poi.id]?.photo_url || ''}
-            onChangeText={(value) => updatePoiDraft(poi.id, { photo_url: value })}
+            value={poiDrafts[activePoi.id]?.photo_url || ''}
+            onChangeText={(value) => updatePoiDraft(activePoi.id, { photo_url: value })}
             placeholder="Optional photo URL"
             placeholderTextColor="#94a3b8"
           />
           <Text style={styles.metaText}>
-            Height: {Math.round(currentCoords?.altitude || 0)} m · Distance from start: {distanceFromStart(routePoints, poi.latitude, poi.longitude)} m
+            Height from device telemetry: {Math.round(currentCoords?.altitude || 0)} m
+          </Text>
+          <Text style={styles.metaText}>
+            Distance from route start: {distanceFromStart(routePoints, activePoi.latitude, activePoi.longitude)} m
+          </Text>
+          <Text style={styles.metaText}>
+            Coordinates: {activePoi.latitude.toFixed(5)}, {activePoi.longitude.toFixed(5)}
           </Text>
         </View>
-      ))}
+      ) : (
+        <View style={styles.formCard}>
+          <Text style={styles.sectionTitle}>POI detail drawer</Text>
+          <Text style={styles.emptyText}>Tap a POI on the map or in the list above to open its editor drawer.</Text>
+        </View>
+      )}
 
       <TouchableOpacity style={styles.saveButton} onPress={handleSaveRoute} disabled={saving}>
-        {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveButtonText}>Save Trail to My Routes</Text>}
+        {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveButtonText}>Save Trail Lab Route</Text>}
       </TouchableOpacity>
 
       <View style={styles.formCard}>
@@ -528,10 +692,10 @@ export default function StudioScreen() {
             <View key={route.id} style={styles.savedRouteCard}>
               <View style={styles.savedRouteHeader}>
                 <Text style={styles.savedRouteName}>{route.name}</Text>
-                <Text style={styles.savedRouteBadge}>{route.build_mode || 'manual'}</Text>
+                <Text style={styles.savedRouteBadge}>{route.sync_status === 'pending' ? 'pending sync' : route.build_mode || 'manual'}</Text>
               </View>
               <Text style={styles.savedRouteMeta}>
-                {route.distance_km.toFixed(1)} km · {route.poi_count || 0} POIs · {route.is_minted ? 'Minted' : 'Draft'}
+                {route.distance_km.toFixed(1)} km · {route.poi_count || 0} POIs · {route.is_minted ? 'Minted' : route.local_only ? 'Local draft' : 'Draft'}
               </Text>
               <Text style={styles.savedRouteMeta}>
                 {route.start_poi_name || 'Start'} → {route.end_poi_name || 'Finish'}
@@ -582,6 +746,35 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     marginTop: 8,
     lineHeight: 20,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#e2e8f0',
+  },
+  statusPillOnline: {
+    backgroundColor: '#dcfce7',
+  },
+  statusPillOffline: {
+    backgroundColor: '#fee2e2',
+  },
+  statusPillText: {
+    color: '#0f172a',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  statusPillTextOnline: {
+    color: '#047857',
+  },
+  statusPillTextOffline: {
+    color: '#b91c1c',
   },
   modeRow: {
     flexDirection: 'row',
@@ -762,12 +955,56 @@ const styles = StyleSheet.create({
     backgroundColor: '#ecfdf5',
     borderColor: '#10b981',
   },
+  poiChipEditing: {
+    borderColor: '#0f172a',
+    borderWidth: 2,
+  },
   poiChipText: {
     color: '#334155',
     fontWeight: '600',
   },
   poiChipTextActive: {
     color: '#047857',
+  },
+  poiPreviewImage: {
+    height: 140,
+    borderRadius: 14,
+    marginBottom: 10,
+    backgroundColor: '#e2e8f0',
+  },
+  roleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  roleButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f1f5f9',
+  },
+  roleButtonActive: {
+    backgroundColor: '#0f172a',
+  },
+  roleButtonText: {
+    color: '#334155',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  roleButtonTextActive: {
+    color: '#fff',
+  },
+  removePoiButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#fee2e2',
+  },
+  removePoiButtonText: {
+    color: '#b91c1c',
+    fontWeight: '700',
+    fontSize: 12,
   },
   metaText: {
     color: '#64748b',

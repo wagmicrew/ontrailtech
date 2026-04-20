@@ -3,7 +3,7 @@ import math
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 
 from database import get_db
@@ -25,8 +25,8 @@ class CreateRouteRequest(BaseModel):
     build_mode: str = "manual"
     is_loop: bool = False
     is_minted: bool = False
-    route_points: list[dict] = []
-    checkpoints: list[dict] = []
+    route_points: list[dict] = Field(default_factory=list)
+    checkpoints: list[dict] = Field(default_factory=list)
 
 
 class RouteResponse(BaseModel):
@@ -43,6 +43,10 @@ class RouteResponse(BaseModel):
     poi_count: int = 0
     start_poi_name: Optional[str] = None
     end_poi_name: Optional[str] = None
+    estimated_duration_min: int = 0
+    route_points: list[dict] = Field(default_factory=list)
+    checkpoints: list[dict] = Field(default_factory=list)
+    poi_ids: list[str] = Field(default_factory=list)
 
 
 class StartRouteRequest(BaseModel):
@@ -51,7 +55,7 @@ class StartRouteRequest(BaseModel):
 
 class CheckinRequest(BaseModel):
     poi_id: str
-    session_id: str
+    session_id: Optional[str] = None
     latitude: float
     longitude: float
 
@@ -108,6 +112,10 @@ async def _serialize_route(route: Route, db: AsyncSession) -> RouteResponse:
         poi_count=len(ordered_pois),
         start_poi_name=ordered_pois[0][1] if ordered_pois else None,
         end_poi_name=ordered_pois[-1][1] if ordered_pois else None,
+        estimated_duration_min=route.estimated_duration_min or 0,
+        route_points=meta.get("route_points", []),
+        checkpoints=meta.get("checkpoints", []),
+        poi_ids=meta.get("poi_ids", []),
     )
 
 
@@ -226,6 +234,31 @@ async def list_routes_by_runner(
     )
     routes = result.scalars().all()
     return [await _serialize_route(route, db) for route in routes]
+
+
+@router.get("/discover", response_model=list[RouteResponse])
+async def discover_routes(
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+):
+    limit = max(1, min(limit, 40))
+    result = await db.execute(
+        select(Route).order_by(Route.created_at.desc()).limit(limit)
+    )
+    routes = result.scalars().all()
+    return [await _serialize_route(route, db) for route in routes]
+
+
+@router.get("/{route_id}", response_model=RouteResponse)
+async def get_route_by_id(
+    route_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Route).where(Route.id == route_id))
+    route = result.scalar_one_or_none()
+    if not route:
+        raise HTTPException(status_code=404, detail="Route not found")
+    return await _serialize_route(route, db)
 
 
 @router.post("/start")

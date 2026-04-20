@@ -9,10 +9,12 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 
 import PoiMap from '../../components/PoiMap';
 import { apiClient } from '../../lib/apiClient';
+import { getDownloadedTrailIds, saveDownloadedTrail } from '../../lib/trailManager';
 import {
   calculateDistance,
   verifyProximity,
@@ -20,7 +22,7 @@ import {
   getCurrentPosition,
 } from '../../lib/gpsVerifier';
 import { POI_NEARBY_RADIUS_KM } from '../../lib/constants';
-import type { POI, GPSPosition } from '../../lib/types';
+import type { POI, GPSPosition, RouteSummary } from '../../lib/types';
 
 // ---------------------------------------------------------------------------
 // Rarity → marker color mapping (Req 10.3)
@@ -59,11 +61,14 @@ function formatCoordinate(value: number): string {
 }
 
 export default function ExploreScreen() {
+  const router = useRouter();
   const mapRef = useRef<any>(null);
 
   const [region, setRegion] = useState<Region>(DEFAULT_REGION);
   const [userPosition, setUserPosition] = useState<GPSPosition | null>(null);
   const [pois, setPois] = useState<POI[]>([]);
+  const [trails, setTrails] = useState<RouteSummary[]>([]);
+  const [downloadedTrailIds, setDownloadedTrailIds] = useState<string[]>([]);
   const [selectedPoi, setSelectedPoi] = useState<POI | null>(null);
   const [loading, setLoading] = useState(true);
   const [gpsAvailable, setGpsAvailable] = useState(true);
@@ -78,6 +83,19 @@ export default function ExploreScreen() {
       setPois(data);
     } catch {
       // Silently fail — keep existing markers
+    }
+  }, []);
+
+  const fetchTrails = useCallback(async () => {
+    try {
+      const [data, downloadedIds] = await Promise.all([
+        apiClient.discoverRoutes(),
+        getDownloadedTrailIds().catch(() => [] as string[]),
+      ]);
+      setTrails(data.slice(0, 4));
+      setDownloadedTrailIds(downloadedIds);
+    } catch {
+      // Keep discovery UI usable even if trail fetch fails
     }
   }, []);
 
@@ -110,7 +128,10 @@ export default function ExploreScreen() {
           longitudeDelta: 0.05,
         };
         setRegion(initialRegion);
-        await fetchPois(pos.latitude, pos.longitude);
+        await Promise.all([
+          fetchPois(pos.latitude, pos.longitude),
+          fetchTrails(),
+        ]);
       } catch {
         if (mounted) setGpsAvailable(false);
       } finally {
@@ -121,7 +142,7 @@ export default function ExploreScreen() {
     return () => {
       mounted = false;
     };
-  }, [fetchPois]);
+  }, [fetchPois, fetchTrails]);
 
   // -----------------------------------------------------------------------
   // Map region change → reload POIs (Req 10.2)
@@ -221,7 +242,7 @@ export default function ExploreScreen() {
     try {
       const lat = userPosition?.latitude ?? region.latitude;
       const lon = userPosition?.longitude ?? region.longitude;
-      await fetchPois(lat, lon);
+      await Promise.all([fetchPois(lat, lon), fetchTrails()]);
       if (userPosition) {
         setRegion((current) => ({
           ...current,
@@ -234,7 +255,18 @@ export default function ExploreScreen() {
     } finally {
       setActionLoading(false);
     }
-  }, [fetchPois, region.latitude, region.longitude, userPosition]);
+  }, [fetchPois, fetchTrails, region.latitude, region.longitude, userPosition]);
+
+  const handleDownloadTrail = useCallback(async (trail: RouteSummary) => {
+    try {
+      const fullTrail = trail.route_points?.length ? trail : await apiClient.getRouteById(trail.id);
+      await saveDownloadedTrail(fullTrail);
+      setDownloadedTrailIds((prev) => (prev.includes(trail.id) ? prev : [...prev, trail.id]));
+      Alert.alert('Trail saved offline', 'Route line and POIs are now stored on your device.');
+    } catch (err: any) {
+      Alert.alert('Download failed', err?.message || 'Could not save this trail yet.');
+    }
+  }, []);
 
   // -----------------------------------------------------------------------
   // GPS unavailable prompt (Req 10.6)
@@ -330,6 +362,39 @@ export default function ExploreScreen() {
     );
   };
 
+  const renderTrailPanel = (embedded = false) => {
+    if (trails.length === 0) return null;
+
+    return (
+      <View style={[styles.trailPanel, embedded && styles.trailPanelEmbedded]}>
+        <Text style={styles.trailPanelEyebrow}>Trail discovery</Text>
+        <Text style={styles.trailPanelTitle}>Run and save trails with low battery use</Text>
+        {trails.map((trail) => {
+          const isDownloaded = downloadedTrailIds.includes(trail.id);
+          return (
+            <View key={trail.id} style={styles.trailCard}>
+              <View style={styles.trailCardHeader}>
+                <Text style={styles.trailCardTitle}>{trail.name}</Text>
+                <Text style={styles.trailCardBadge}>{trail.build_mode || 'manual'}</Text>
+              </View>
+              <Text style={styles.trailCardMeta}>
+                {trail.distance_km.toFixed(1)} km · {trail.poi_count || 0} POIs · {trail.is_minted ? 'Minted' : 'Open'}
+              </Text>
+              <View style={styles.trailActionRow}>
+                <TouchableOpacity style={[styles.trailActionButton, styles.trailRunButton]} onPress={() => router.push({ pathname: '/trail-run', params: { routeId: trail.id } })}>
+                  <Text style={styles.trailActionText}>Start Trail Run</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.trailActionButton, isDownloaded ? styles.trailSavedButton : styles.trailDownloadButton]} onPress={() => handleDownloadTrail(trail)}>
+                  <Text style={styles.trailActionText}>{isDownloaded ? 'Saved Offline' : 'Download Map'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   const renderWebFallback = () => (
     <View style={styles.webContainer}>
       <View style={styles.webHeader}>
@@ -376,6 +441,7 @@ export default function ExploreScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.webList}>
+        {renderTrailPanel(true)}
         {pois.length === 0 ? (
           <View style={styles.webEmptyState}>
             <Text style={styles.webEmptyTitle}>No POIs found</Text>
@@ -489,6 +555,9 @@ export default function ExploreScreen() {
           {actionLoading ? '…' : '+ Mint POI'}
         </Text>
       </TouchableOpacity>
+
+      {/* Trail discovery panel */}
+      {!selectedPoi ? renderTrailPanel() : null}
 
       {/* Selected POI detail card */}
       {renderDetailCard()}
@@ -739,6 +808,102 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: -2 },
     elevation: 6,
+  },
+  trailPanel: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 6,
+    maxHeight: 300,
+  },
+  trailPanelEmbedded: {
+    position: 'relative',
+    left: undefined,
+    right: undefined,
+    bottom: undefined,
+    marginBottom: 12,
+    maxHeight: undefined,
+  },
+  trailPanelEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803d',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  trailPanelTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 10,
+  },
+  trailCard: {
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    marginTop: 8,
+  },
+  trailCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  trailCardTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+    marginRight: 8,
+  },
+  trailCardBadge: {
+    backgroundColor: '#dbeafe',
+    color: '#1d4ed8',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    overflow: 'hidden',
+    fontWeight: '700',
+    textTransform: 'capitalize',
+    fontSize: 11,
+  },
+  trailCardMeta: {
+    color: '#64748b',
+    marginTop: 4,
+    fontSize: 12,
+  },
+  trailActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  trailActionButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  trailRunButton: {
+    backgroundColor: '#10b981',
+  },
+  trailDownloadButton: {
+    backgroundColor: '#1d4ed8',
+  },
+  trailSavedButton: {
+    backgroundColor: '#0f172a',
+  },
+  trailActionText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
   },
   detailHeader: {
     flexDirection: 'row',

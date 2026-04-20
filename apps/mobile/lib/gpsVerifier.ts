@@ -132,11 +132,13 @@ export function verifyProximity(
 export async function buildCheckinPayload(
   poiId: string,
   userPos: GPSPosition,
+  sessionId?: string,
 ): Promise<CheckinPayload> {
   const attestationToken = await getAttestationToken();
 
   const payload: CheckinPayload = {
     poi_id: poiId,
+    session_id: sessionId,
     latitude: userPos.latitude,
     longitude: userPos.longitude,
     accuracy: userPos.accuracy,
