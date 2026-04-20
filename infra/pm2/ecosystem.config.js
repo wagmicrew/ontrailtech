@@ -7,9 +7,12 @@ module.exports = {
     {
       name: 'ontrail-api',
       cwd: path.join(rootDir, 'services/api'),
-      script: 'uvicorn',
-      args: 'main:app --host 127.0.0.1 --port 8100',
+      script: process.env.ONTRAIL_API_PYTHON || 'python3',
+      args: '-m uvicorn main:app --host 127.0.0.1 --port 8100',
       interpreter: 'none',
+      env: {
+        PYTHONUNBUFFERED: '1',
+      },
     },
     {
       name: 'ontrail-web',
