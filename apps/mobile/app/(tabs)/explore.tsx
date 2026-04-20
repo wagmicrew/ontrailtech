@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  ScrollView,
 } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 
+import PoiMap from '../../components/PoiMap';
 import { apiClient } from '../../lib/apiClient';
 import {
   calculateDistance,
@@ -46,8 +47,19 @@ const DEFAULT_REGION: Region = {
   longitudeDelta: 0.05,
 };
 
+type Region = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
+
+function formatCoordinate(value: number): string {
+  return value.toFixed(4);
+}
+
 export default function ExploreScreen() {
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<any>(null);
 
   const [region, setRegion] = useState<Region>(DEFAULT_REGION);
   const [userPosition, setUserPosition] = useState<GPSPosition | null>(null);
@@ -204,6 +216,26 @@ export default function ExploreScreen() {
     }
   }, [selectedPoi, userPosition]);
 
+  const handleRefreshNearby = useCallback(async () => {
+    setActionLoading(true);
+    try {
+      const lat = userPosition?.latitude ?? region.latitude;
+      const lon = userPosition?.longitude ?? region.longitude;
+      await fetchPois(lat, lon);
+      if (userPosition) {
+        setRegion((current) => ({
+          ...current,
+          latitude: userPosition.latitude,
+          longitude: userPosition.longitude,
+        }));
+      }
+    } catch {
+      Alert.alert('Refresh Failed', 'Unable to refresh nearby POIs right now.');
+    } finally {
+      setActionLoading(false);
+    }
+  }, [fetchPois, region.latitude, region.longitude, userPosition]);
+
   // -----------------------------------------------------------------------
   // GPS unavailable prompt (Req 10.6)
   // -----------------------------------------------------------------------
@@ -298,28 +330,154 @@ export default function ExploreScreen() {
     );
   };
 
+  const renderWebFallback = () => (
+    <View style={styles.webContainer}>
+      <View style={styles.webHeader}>
+        <Text style={styles.webTitle}>POIs near your current area</Text>
+        <Text style={styles.webSubtitle}>
+          Interactive native maps are only enabled on iOS and Android. On web, you can still browse nearby POIs and mint/check in.
+        </Text>
+        <View style={styles.webStatsRow}>
+          <View style={styles.webStatCard}>
+            <Text style={styles.webStatLabel}>Nearby POIs</Text>
+            <Text style={styles.webStatValue}>{pois.length}</Text>
+          </View>
+          <View style={styles.webStatCard}>
+            <Text style={styles.webStatLabel}>Center</Text>
+            <Text style={styles.webStatValueSmall}>
+              {formatCoordinate(region.latitude)}, {formatCoordinate(region.longitude)}
+            </Text>
+          </View>
+          <View style={styles.webStatCard}>
+            <Text style={styles.webStatLabel}>GPS</Text>
+            <Text style={styles.webStatValueSmall}>
+              {userPosition ? 'Live' : 'Fallback'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.webActionsRow}>
+          <TouchableOpacity
+            style={[styles.webActionButton, styles.webRefreshButton]}
+            onPress={handleRefreshNearby}
+            disabled={actionLoading}
+          >
+            <Text style={styles.webRefreshButtonText}>
+              {actionLoading ? 'Refreshing…' : 'Refresh Nearby'}
+            </Text>
+          </TouchableOpacity>
+          {userPosition ? (
+            <View style={styles.webLocationChip}>
+              <Text style={styles.webLocationChipText}>
+                You: {formatCoordinate(userPosition.latitude)}, {formatCoordinate(userPosition.longitude)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.webList}>
+        {pois.length === 0 ? (
+          <View style={styles.webEmptyState}>
+            <Text style={styles.webEmptyTitle}>No POIs found</Text>
+            <Text style={styles.webEmptyText}>Try moving to another area or mint a new POI.</Text>
+          </View>
+        ) : (
+          pois.map((poi) => {
+            const dist = distanceToPoi(poi);
+            const distLabel =
+              dist !== null
+                ? dist >= 1000
+                  ? `${(dist / 1000).toFixed(1)} km away`
+                  : `${Math.round(dist)}m away`
+                : 'Distance unknown';
+
+            return (
+              <TouchableOpacity
+                key={poi.id}
+                style={styles.poiCard}
+                onPress={() => setSelectedPoi(poi)}
+              >
+                <View style={styles.poiCardHeader}>
+                  <Text style={styles.poiCardTitle}>{poi.name}</Text>
+                  <View
+                    style={[
+                      styles.rarityBadge,
+                      { backgroundColor: getRarityColor(poi.rarity) },
+                    ]}
+                  >
+                    <Text style={styles.rarityBadgeText}>{poi.rarity}</Text>
+                  </View>
+                </View>
+                <Text style={styles.poiCardDistance}>{distLabel}</Text>
+                {poi.description ? (
+                  <Text style={styles.poiCardDescription}>{poi.description}</Text>
+                ) : null}
+              </TouchableOpacity>
+            );
+          })
+        )}
+
+        {selectedPoi ? (
+          <View style={styles.webSelectionCard}>
+            <Text style={styles.webSelectionEyebrow}>Selected POI</Text>
+            <View style={styles.poiCardHeader}>
+              <Text style={styles.poiCardTitle}>{selectedPoi.name}</Text>
+              <View
+                style={[
+                  styles.rarityBadge,
+                  { backgroundColor: getRarityColor(selectedPoi.rarity) },
+                ]}
+              >
+                <Text style={styles.rarityBadgeText}>{selectedPoi.rarity}</Text>
+              </View>
+            </View>
+            <Text style={styles.poiCardDistance}>
+              {formatCoordinate(selectedPoi.latitude)}, {formatCoordinate(selectedPoi.longitude)}
+            </Text>
+            {selectedPoi.description ? (
+              <Text style={styles.poiCardDescription}>{selectedPoi.description}</Text>
+            ) : null}
+            <View style={styles.detailActions}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.checkinButton]}
+                onPress={handleCheckin}
+                disabled={actionLoading}
+              >
+                <Text style={styles.actionButtonText}>
+                  {actionLoading ? 'Processing…' : 'Check In'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setSelectedPoi(null)}
+              >
+                <Text style={styles.closeButtonText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+
   // -----------------------------------------------------------------------
   // Main render — map + markers + detail card + mint button
   // -----------------------------------------------------------------------
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={region}
-        onRegionChangeComplete={onRegionChangeComplete}
-        showsUserLocation
-        showsMyLocationButton
-      >
-        {pois.map((poi) => (
-          <Marker
-            key={poi.id}
-            coordinate={{ latitude: poi.latitude, longitude: poi.longitude }}
-            pinColor={getRarityColor(poi.rarity)}
-            onPress={() => setSelectedPoi(poi)}
-          />
-        ))}
-      </MapView>
+      {Platform.OS === 'web' ? (
+        renderWebFallback()
+      ) : (
+        <PoiMap
+          mapRef={mapRef}
+          style={styles.map}
+          initialRegion={region}
+          onRegionChangeComplete={onRegionChangeComplete}
+          pois={pois}
+          getRarityColor={getRarityColor}
+          onSelectPoi={setSelectedPoi}
+        />
+      )}
 
       {/* Mint POI floating button */}
       <TouchableOpacity
@@ -345,6 +503,169 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  webContainer: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  webHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    backgroundColor: '#ecfdf5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d1fae5',
+  },
+  webTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#14532d',
+    marginBottom: 6,
+  },
+  webSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#166534',
+  },
+  webStatsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+    flexWrap: 'wrap',
+  },
+  webStatCard: {
+    backgroundColor: '#ffffffcc',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    minWidth: 110,
+  },
+  webStatLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    color: '#15803d',
+    marginBottom: 6,
+  },
+  webStatValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#14532d',
+  },
+  webStatValueSmall: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#14532d',
+  },
+  webActionsRow: {
+    marginTop: 14,
+    gap: 10,
+  },
+  webActionButton: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  webRefreshButton: {
+    backgroundColor: '#166534',
+  },
+  webRefreshButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  webLocationChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#dcfce7',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  webLocationChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#166534',
+  },
+  webList: {
+    padding: 16,
+    gap: 12,
+  },
+  webEmptyState: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  webEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  webEmptyText: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 20,
+  },
+  poiCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  poiCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  poiCardTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginRight: 8,
+  },
+  poiCardDistance: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 6,
+  },
+  poiCardDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#374151',
+  },
+  webSelectionCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  webSelectionEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803d',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 10,
   },
   centered: {
     flex: 1,
