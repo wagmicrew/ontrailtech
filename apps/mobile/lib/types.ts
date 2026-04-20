@@ -101,6 +101,9 @@ export interface RouteCheckpoint {
   distance_from_start_m?: number;
   is_required?: boolean;
   role?: 'start' | 'checkpoint' | 'finish';
+  kind?: 'poi' | 'checkpoint' | 'detour';
+  anchor_point_index?: number | null;
+  local_only?: boolean;
 }
 
 export interface RouteSummary {
@@ -147,6 +150,9 @@ export interface POI {
   longitude: number;
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
   description: string | null;
+  kind?: 'poi' | 'checkpoint' | 'detour';
+  anchor_point_index?: number | null;
+  local_only?: boolean;
 }
 
 /** Payload for POST /steps/sync */

@@ -64,6 +64,42 @@ function totalRouteDistanceKm(routePoints: RoutePoint[]): number {
   return total / 1000;
 }
 
+function nearestRoutePointIndex(routePoints: RoutePoint[], latitude: number, longitude: number): number {
+  if (!routePoints.length) return 0;
+  let closestIndex = 0;
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  routePoints.forEach((point, index) => {
+    const distance = calculateDistance(point, { latitude, longitude });
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  });
+
+  return closestIndex;
+}
+
+function nearestRouteSegmentIndex(routePoints: RoutePoint[], latitude: number, longitude: number): number {
+  if (routePoints.length < 2) return Math.max(0, routePoints.length - 1);
+
+  let closestIndex = 0;
+  let closestScore = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < routePoints.length - 1; index += 1) {
+    const start = routePoints[index];
+    const end = routePoints[index + 1];
+    const score = calculateDistance(start, { latitude, longitude }) + calculateDistance(end, { latitude, longitude });
+
+    if (score < closestScore) {
+      closestScore = score;
+      closestIndex = index;
+    }
+  }
+
+  return closestIndex;
+}
+
 function buildLocalRouteSummary(
   payload: CreateRoutePayload,
   routePoints: RoutePoint[],
@@ -114,15 +150,61 @@ export default function StudioScreen() {
   const [currentCoords, setCurrentCoords] = useState<Location.LocationObjectCoords | null>(null);
   const [isOnlineState, setIsOnlineState] = useState(true);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [selectedRoutePointIndex, setSelectedRoutePointIndex] = useState<number | null>(null);
 
   const selectedPois = useMemo(
     () => selectedPoiIds.map((id) => pois.find((poi) => poi.id === id)).filter(Boolean) as POI[],
     [pois, selectedPoiIds],
   );
 
+  const selectedServerPois = useMemo(
+    () => selectedPois.filter((poi) => !poi.local_only),
+    [selectedPois],
+  );
+
   const activePoi = useMemo(
     () => selectedPois.find((poi) => poi.id === activePoiId) || null,
     [activePoiId, selectedPois],
+  );
+
+  const activePoiAnchorIndex = useMemo(() => {
+    if (!activePoi || !routePoints.length) return null;
+    if (typeof activePoi.anchor_point_index === 'number') {
+      return Math.max(0, Math.min(routePoints.length - 1, activePoi.anchor_point_index));
+    }
+    return nearestRoutePointIndex(routePoints, activePoi.latitude, activePoi.longitude);
+  }, [activePoi, routePoints]);
+
+  const connectorLines = useMemo(
+    () => selectedPois
+      .map((poi) => {
+        if (!routePoints.length) return null;
+
+        const anchorIndex = typeof poi.anchor_point_index === 'number'
+          ? Math.max(0, Math.min(routePoints.length - 1, poi.anchor_point_index))
+          : nearestRoutePointIndex(routePoints, poi.latitude, poi.longitude);
+
+        const anchorPoint = routePoints[anchorIndex];
+        if (!anchorPoint) return null;
+
+        const distance = calculateDistance(
+          { latitude: anchorPoint.latitude, longitude: anchorPoint.longitude },
+          { latitude: poi.latitude, longitude: poi.longitude },
+        );
+
+        if (distance < 8) return null;
+
+        return {
+          id: `${poi.id}-${anchorIndex}`,
+          color: poi.kind === 'detour' || poi.local_only ? '#f59e0b' : '#38bdf8',
+          coordinates: [
+            { latitude: anchorPoint.latitude, longitude: anchorPoint.longitude },
+            { latitude: poi.latitude, longitude: poi.longitude },
+          ],
+        };
+      })
+      .filter(Boolean) as Array<{ id: string; color: string; coordinates: Array<{ latitude: number; longitude: number }> }>,
+    [routePoints, selectedPois],
   );
 
   const activePoiRole = activePoi
@@ -167,7 +249,13 @@ export default function StudioScreen() {
   const fetchNearbyPois = useCallback(async (latitude: number, longitude: number) => {
     try {
       const nearby = await apiClient.getNearbyPois(latitude, longitude, 12);
-      setPois(nearby.slice(0, 12));
+      setPois((prev) => {
+        const localPois = prev.filter((poi) => poi.local_only);
+        return [
+          ...localPois,
+          ...nearby.slice(0, 12).filter((poi) => !localPois.some((localPoi) => localPoi.id === poi.id)),
+        ];
+      });
     } catch {
       // keep existing POIs if fetch fails
     }
@@ -231,7 +319,10 @@ export default function StudioScreen() {
     if (activePoiId && !selectedPoiIds.includes(activePoiId)) {
       setActivePoiId(selectedPoiIds[0] || null);
     }
-  }, [activePoiId, selectedPoiIds]);
+    if (selectedRoutePointIndex !== null && selectedRoutePointIndex >= routePoints.length) {
+      setSelectedRoutePointIndex(routePoints.length ? routePoints.length - 1 : null);
+    }
+  }, [activePoiId, routePoints.length, selectedPoiIds, selectedRoutePointIndex]);
 
   useEffect(() => {
     if (isOnlineState) {
@@ -264,7 +355,110 @@ export default function StudioScreen() {
         ? { ...point, latitude: coordinate.latitude, longitude: coordinate.longitude, manual: true }
         : point
     )));
+    setSelectedRoutePointIndex(index);
   }, []);
+
+  const handleSelectRoutePoint = useCallback((index: number) => {
+    setSelectedRoutePointIndex((current) => (current === index ? null : index));
+  }, []);
+
+  const handleAddCheckpointAtLine = useCallback((coordinate: { latitude: number; longitude: number }) => {
+    const insertAfter = nearestRouteSegmentIndex(routePoints, coordinate.latitude, coordinate.longitude);
+    const insertAt = routePoints.length ? insertAfter + 1 : 0;
+
+    setRoutePoints((prev) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, {
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+        altitude: currentCoords?.altitude ?? null,
+        label: `Checkpoint ${insertAt + 1}`,
+        timestamp: new Date().toISOString(),
+        manual: true,
+      });
+      return next;
+    });
+
+    setPois((prev) => prev.map((poi) => (
+      typeof poi.anchor_point_index === 'number' && poi.anchor_point_index >= insertAt
+        ? { ...poi, anchor_point_index: poi.anchor_point_index + 1 }
+        : poi
+    )));
+    setSelectedRoutePointIndex(insertAt);
+  }, [currentCoords?.altitude, routePoints]);
+
+  const handleAddPoiAtLine = useCallback((coordinate: { latitude: number; longitude: number }) => {
+    const anchorIndex = routePoints.length
+      ? selectedRoutePointIndex ?? nearestRoutePointIndex(routePoints, coordinate.latitude, coordinate.longitude)
+      : null;
+
+    const newPoi: POI = {
+      id: `local-poi-${Date.now()}`,
+      name: `Detour POI ${Date.now().toString().slice(-4)}`,
+      latitude: coordinate.latitude,
+      longitude: coordinate.longitude,
+      rarity: 'rare',
+      description: '',
+      kind: 'detour',
+      anchor_point_index: anchorIndex,
+      local_only: true,
+    };
+
+    setPois((prev) => [newPoi, ...prev]);
+    setSelectedPoiIds((prev) => {
+      if (prev.includes(newPoi.id)) return prev;
+      if (prev.length >= 2) {
+        return [...prev.slice(0, -1), newPoi.id, prev[prev.length - 1]];
+      }
+      return [...prev, newPoi.id];
+    });
+    setPoiDrafts((prev) => ({
+      ...prev,
+      [newPoi.id]: {
+        title: newPoi.name,
+        body: 'Optional detour or checkpoint note',
+        photo_url: '',
+      },
+    }));
+    setActivePoiId(newPoi.id);
+  }, [routePoints, selectedRoutePointIndex]);
+
+  const handleRouteLinePress = useCallback((coordinate: { latitude: number; longitude: number }) => {
+    Alert.alert('Connector actions', 'Add a POI or a checkpoint directly on this trail connector.', [
+      {
+        text: 'Add POI',
+        onPress: () => handleAddPoiAtLine(coordinate),
+      },
+      {
+        text: 'Add checkpoint',
+        onPress: () => handleAddCheckpointAtLine(coordinate),
+      },
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+    ]);
+  }, [handleAddCheckpointAtLine, handleAddPoiAtLine]);
+
+  const handleDragPoi = useCallback((poiId: string, coordinate: { latitude: number; longitude: number }) => {
+    setPois((prev) => prev.map((poi) => {
+      if (poi.id !== poiId) return poi;
+
+      const nextAnchorIndex = typeof poi.anchor_point_index === 'number'
+        ? poi.anchor_point_index
+        : routePoints.length
+          ? selectedRoutePointIndex ?? nearestRoutePointIndex(routePoints, coordinate.latitude, coordinate.longitude)
+          : null;
+
+      return {
+        ...poi,
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+        anchor_point_index: nextAnchorIndex,
+      };
+    }));
+    setActivePoiId(poiId);
+  }, [routePoints, selectedRoutePointIndex]);
 
   const handleSnapshot = useCallback(async () => {
     try {
@@ -339,6 +533,12 @@ export default function StudioScreen() {
 
   const removeSelectedPoi = useCallback((poiId: string) => {
     setSelectedPoiIds((prev) => prev.filter((id) => id !== poiId));
+    setPois((prev) => prev.filter((poi) => !(poi.id === poiId && poi.local_only)));
+    setPoiDrafts((prev) => {
+      const next = { ...prev };
+      delete next[poiId];
+      return next;
+    });
     setActivePoiId((current) => (current === poiId ? null : current));
   }, []);
 
@@ -362,14 +562,26 @@ export default function StudioScreen() {
     }));
   }, []);
 
+  const updatePoiAnchor = useCallback((poiId: string, anchorIndex: number | null) => {
+    setPois((prev) => prev.map((poi) => (
+      poi.id === poiId
+        ? {
+            ...poi,
+            anchor_point_index: anchorIndex,
+            kind: poi.local_only ? 'detour' : poi.kind,
+          }
+        : poi
+    )));
+  }, []);
+
   const handleSaveRoute = useCallback(async () => {
     if (!routeName.trim()) {
       Alert.alert('Route name needed', 'Give the route a name before saving it.');
       return;
     }
 
-    if (selectedPoiIds.length < 2) {
-      Alert.alert('Start and end POIs required', 'Select at least two POIs so the route has a start and finish.');
+    if (selectedServerPois.length < 2) {
+      Alert.alert('Start and end POIs required', 'Select at least two mapped POIs so the route has a start and finish.');
       return;
     }
 
@@ -385,13 +597,13 @@ export default function StudioScreen() {
 
     setSaving(true);
     try {
-      const orderedPoiIds = [...selectedPoiIds];
+      const orderedPoiIds = selectedServerPois.map((poi) => poi.id);
       if (isLoop && orderedPoiIds[0] !== orderedPoiIds[orderedPoiIds.length - 1]) {
         orderedPoiIds.push(orderedPoiIds[0]);
       }
 
       const checkpoints = selectedPois.map((poi, index) => ({
-        poi_id: poi.id,
+        poi_id: poi.local_only ? undefined : poi.id,
         title: poiDrafts[poi.id]?.title || poi.name,
         body: poiDrafts[poi.id]?.body || poi.description || '',
         photo_url: poiDrafts[poi.id]?.photo_url || '',
@@ -399,8 +611,11 @@ export default function StudioScreen() {
         longitude: poi.longitude,
         altitude: currentCoords?.altitude ?? null,
         distance_from_start_m: distanceFromStart(routePoints, poi.latitude, poi.longitude),
-        is_required: true,
+        is_required: !poi.local_only,
         role: index === 0 ? 'start' : index === selectedPois.length - 1 ? 'finish' : 'checkpoint',
+        kind: poi.kind || (poi.local_only ? 'detour' : 'poi'),
+        anchor_point_index: typeof poi.anchor_point_index === 'number' ? poi.anchor_point_index : null,
+        local_only: !!poi.local_only,
       }));
 
       const payload: CreateRoutePayload = {
@@ -441,7 +656,7 @@ export default function StudioScreen() {
     } finally {
       setSaving(false);
     }
-  }, [currentCoords?.altitude, difficulty, fetchMyRoutes, isLoop, isMinted, mode, poiDrafts, routeDescription, routeName, routePoints, selectedPoiIds, selectedPois, stopRecording]);
+  }, [currentCoords?.altitude, difficulty, fetchMyRoutes, isLoop, isMinted, mode, poiDrafts, routeDescription, routeName, routePoints, selectedPois, selectedServerPois, stopRecording]);
 
   if (loading) {
     return (
@@ -497,17 +712,33 @@ export default function StudioScreen() {
         pois={pois}
         getRarityColor={getRarityColor}
         onSelectPoi={handleSelectPoi}
+        selectedPoiId={activePoiId}
         routePoints={routePoints}
         editableRoute={mode === 'manual'}
+        selectedRoutePointIndex={selectedRoutePointIndex}
+        connectorLines={connectorLines}
         onMapPress={handleManualTap}
         onDragPoint={handleDragPoint}
+        onSelectRoutePoint={handleSelectRoutePoint}
+        onDragPoi={handleDragPoi}
+        onRouteLinePress={handleRouteLinePress}
       />
 
       <Text style={styles.helperText}>
         {mode === 'manual'
-          ? 'Tap the map to add line points and drag markers to reshape the path.'
-          : 'Start recording, then use Snapshot to pin key moments and add required POI check-ins.'}
+          ? 'Tap the map to add points, drag a POI to move it, or tap the trail line to add a POI or checkpoint.'
+          : 'Start recording, then tap any connector line to place a detour POI or insert a checkpoint.'}
       </Text>
+
+      <View style={styles.formCard}>
+        <Text style={styles.sectionTitle}>Connector tools</Text>
+        <Text style={styles.helperTextSecondary}>
+          Tap any checkpoint marker on the route to select a manual detour anchor. New detours default to the nearest checkpoint if none is selected.
+        </Text>
+        <Text style={styles.metaText}>
+          Current detour anchor: {selectedRoutePointIndex !== null ? `Checkpoint ${selectedRoutePointIndex + 1}` : 'Nearest checkpoint automatically'}
+        </Text>
+      </View>
 
       <View style={styles.formCard}>
         <Text style={styles.sectionTitle}>Mobile telemetry</Text>
@@ -621,7 +852,7 @@ export default function StudioScreen() {
         <View style={styles.formCard}>
           <Text style={styles.sectionTitle}>POI detail drawer</Text>
           <Text style={styles.helperTextSecondary}>
-            Edit details, image, telemetry notes, and set this POI as the route start or finish.
+            Edit details, image, telemetry notes, set start or finish, and connect detours from the nearest or selected checkpoint.
           </Text>
 
           {poiDrafts[activePoi.id]?.photo_url ? (
@@ -639,6 +870,30 @@ export default function StudioScreen() {
               <Text style={styles.removePoiButtonText}>Remove</Text>
             </TouchableOpacity>
           </View>
+
+          {routePoints.length ? (
+            <>
+              <Text style={styles.label}>Detour connector</Text>
+              <Text style={styles.metaText}>
+                Connected from: {activePoiAnchorIndex !== null ? `Checkpoint ${activePoiAnchorIndex + 1}` : 'Nearest route checkpoint'}
+              </Text>
+              <View style={styles.roleRow}>
+                <TouchableOpacity style={[styles.roleButton, activePoiAnchorIndex === null && styles.roleButtonActive]} onPress={() => updatePoiAnchor(activePoi.id, null)}>
+                  <Text style={[styles.roleButtonText, activePoiAnchorIndex === null && styles.roleButtonTextActive]}>Use nearest</Text>
+                </TouchableOpacity>
+                {selectedRoutePointIndex !== null ? (
+                  <TouchableOpacity
+                    style={[styles.roleButton, activePoiAnchorIndex === selectedRoutePointIndex && styles.roleButtonActive]}
+                    onPress={() => updatePoiAnchor(activePoi.id, selectedRoutePointIndex)}
+                  >
+                    <Text style={[styles.roleButtonText, activePoiAnchorIndex === selectedRoutePointIndex && styles.roleButtonTextActive]}>
+                      Use checkpoint {selectedRoutePointIndex + 1}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </>
+          ) : null}
 
           <TextInput
             style={styles.input}
@@ -675,7 +930,7 @@ export default function StudioScreen() {
       ) : (
         <View style={styles.formCard}>
           <Text style={styles.sectionTitle}>POI detail drawer</Text>
-          <Text style={styles.emptyText}>Tap a POI on the map or in the list above to open its editor drawer.</Text>
+          <Text style={styles.emptyText}>Tap a POI on the map, drag one into place, or tap a connector line to create a new detour drawer.</Text>
         </View>
       )}
 
