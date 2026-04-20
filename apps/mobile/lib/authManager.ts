@@ -96,24 +96,15 @@ async function handleAuthResponse(response: AuthResponse): Promise<void> {
 /**
  * OTP email login.
  *
- * 1. Request OTP for the given email
- * 2. Verify the OTP code
- * 3. Store the returned token pair
+ * 1. Verify the OTP code already sent by the UI
+ * 2. Store the returned token pair
  */
 export async function loginWithOtp(
   email: string,
   code: string,
 ): Promise<AuthResponse> {
-  // Step 1: request OTP (the caller should have already done this for the UI,
-  // but we call it here to satisfy the full flow contract)
-  await apiClient.requestOtp(email);
-
-  // Step 2: verify OTP
   const response = await apiClient.verifyOtp(email, code);
-
-  // Step 3: store tokens
   await handleAuthResponse(response);
-
   return response;
 }
 

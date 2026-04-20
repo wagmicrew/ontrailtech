@@ -12,7 +12,8 @@
           "locationAlwaysAndWhenInUsePermission": "OnTrail needs your location to track routes and discover POIs."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "ios": {
       "bundleIdentifier": "tech.ontrail.app",

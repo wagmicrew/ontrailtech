@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,19 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { authManager } from '../../lib/authManager';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const FALLBACK_GOOGLE_CLIENT_ID = '1068426470875-inhfosoi2ut7e0up9qv1jrue66dm606e.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || FALLBACK_GOOGLE_CLIENT_ID;
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -21,6 +31,43 @@ export default function LoginScreen() {
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+    expoClientId: GOOGLE_CLIENT_ID,
+    webClientId: GOOGLE_CLIENT_ID,
+    iosClientId: env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || GOOGLE_CLIENT_ID,
+    androidClientId: env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || GOOGLE_CLIENT_ID,
+    scopes: ['openid', 'profile', 'email'],
+    selectAccount: true,
+    responseType: 'id_token',
+  });
+
+  useEffect(() => {
+    if (!googleResponse) return;
+
+    if (googleResponse.type === 'success') {
+      const idToken = googleResponse.authentication?.idToken || googleResponse.params?.id_token;
+      if (!idToken) {
+        setLoading(false);
+        Alert.alert('Error', 'Google sign-in did not return an ID token');
+        return;
+      }
+
+      void (async () => {
+        try {
+          await authManager.loginWithGoogleToken(idToken);
+          router.replace('/(tabs)');
+        } catch (err: any) {
+          Alert.alert('Error', err?.message ?? 'Google sign-in failed');
+        } finally {
+          setLoading(false);
+        }
+      })();
+      return;
+    }
+
+    setLoading(false);
+  }, [googleResponse, router]);
 
   async function handleSendOtp() {
     if (!email.trim()) return;
@@ -49,30 +96,35 @@ export default function LoginScreen() {
   }
 
   async function handleGoogleSignIn() {
+    if (!googleRequest) {
+      Alert.alert('Google Sign-In', 'Google Sign-In is still loading. Please try again in a moment.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // In a real implementation the login screen would use the useAuthRequest
-      // hook from expo-auth-session to obtain the Google id_token, then call
-      // authManager.loginWithGoogleToken(idToken). This placeholder calls the
-      // imperative wrapper which will guide the developer to the hook-based path.
-      await authManager.loginWithGoogle();
-      router.replace('/(tabs)');
+      const result = await promptGoogleAsync();
+      if (result.type !== 'success') {
+        setLoading(false);
+      }
     } catch (err: any) {
-      // User cancelled — return silently per requirement 3.4
-      if (err?.message?.includes('cancelled') || err?.message?.includes('useAuthRequest')) return;
-      Alert.alert('Error', err?.message ?? 'Google sign-in failed');
-    } finally {
       setLoading(false);
+      if (err?.message?.includes('cancelled')) return;
+      Alert.alert('Error', err?.message ?? 'Google sign-in failed');
     }
   }
 
   async function handleAppleSignIn() {
+    if (Platform.OS !== 'ios' || !(await AppleAuthentication.isAvailableAsync())) {
+      Alert.alert('Apple Sign-In', 'Apple Sign-In is only available on a supported iPhone or iPad.');
+      return;
+    }
+
     setLoading(true);
     try {
       await authManager.loginWithApple();
       router.replace('/(tabs)');
     } catch (err: any) {
-      // User cancelled — return silently per requirement 4.5
       if (err?.code === 'ERR_CANCELED' || err?.message?.includes('cancelled')) return;
       Alert.alert('Error', err?.message ?? 'Apple sign-in failed');
     } finally {
@@ -81,20 +133,38 @@ export default function LoginScreen() {
   }
 
   async function handleWalletConnect() {
-    setLoading(true);
-    try {
-      // In a real implementation the ConnectKit context would provide the
-      // walletAddress and signMessage function. This placeholder calls the
-      // imperative wrapper which guides the developer to the ConnectKit path.
-      await authManager.loginWithWallet();
-      router.replace('/(tabs)');
-    } catch (err: any) {
-      // User rejected — return silently per requirement 5.6
-      if (err?.message?.includes('rejected') || err?.message?.includes('ConnectKit')) return;
-      Alert.alert('Error', err?.message ?? 'Wallet connection failed');
-    } finally {
-      setLoading(false);
+    const walletUrl = 'https://app.ontrail.tech';
+
+    if (Platform.OS === 'web') {
+      await Linking.openURL(walletUrl);
+      return;
     }
+
+    Alert.alert(
+      'Connect Wallet',
+      'Choose a wallet app or continue in your browser to sign in.',
+      [
+        {
+          text: 'MetaMask',
+          onPress: () => {
+            void Linking.openURL('https://metamask.app.link/dapp/app.ontrail.tech');
+          },
+        },
+        {
+          text: 'Coinbase Wallet',
+          onPress: () => {
+            void Linking.openURL('https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fapp.ontrail.tech');
+          },
+        },
+        {
+          text: 'Browser',
+          onPress: () => {
+            void Linking.openURL(walletUrl);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   }
 
   return (

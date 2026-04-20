@@ -324,8 +324,8 @@ async def google_auth(
 
     data = resp.json()
 
-    # Verify the token was issued for this application
-    if data.get("aud") != settings.google_client_id:
+    # Verify the token was issued for this application when a client ID is configured
+    if settings.google_client_id and data.get("aud") != settings.google_client_id:
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
     google_email = data.get("email")
