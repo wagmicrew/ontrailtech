@@ -15,7 +15,7 @@ import {
 
 import { apiClient } from '../../lib/apiClient';
 import * as healthSync from '../../lib/healthSync';
-import type { AuthUser, RunnerProfile, ProfileUpdate, HealthSyncPayload } from '../../lib/types';
+import type { AuthUser, RunnerProfile, ProfileUpdate, HealthSyncPayload, RouteSummary } from '../../lib/types';
 
 // ---------------------------------------------------------------------------
 // Image picker — graceful degradation if expo-image-picker is not installed
@@ -52,6 +52,7 @@ export default function ProfileScreen() {
 
   // Avatar upload state
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [routes, setRoutes] = useState<RouteSummary[]>([]);
 
   // ── Data fetching ────────────────────────────────────────────────────
   const loadProfile = useCallback(async () => {
@@ -59,14 +60,15 @@ export default function ProfileScreen() {
       const me = await apiClient.getMe();
       setUser(me);
 
-      if (me.username) {
-        try {
-          const profile = await apiClient.getRunner(me.username);
-          setRunner(profile);
-        } catch {
-          // Runner profile may not exist yet — use AuthUser data only
-        }
-      }
+      const [profile, myRoutes] = await Promise.all([
+        me.username
+          ? apiClient.getRunner(me.username).catch(() => null as RunnerProfile | null)
+          : Promise.resolve(null as RunnerProfile | null),
+        apiClient.getMyRoutes().catch(() => [] as RouteSummary[]),
+      ]);
+
+      setRunner(profile);
+      setRoutes(myRoutes);
     } catch {
       // Network error — could serve cached data in the future
     }
@@ -106,9 +108,9 @@ export default function ProfileScreen() {
   const openEditForm = () => {
     setFormUsername(user?.username ?? '');
     setFormEmail(user?.email ?? '');
-    setFormBio(runner?.bio ?? '');
-    setFormLocation('');
-    setFormWallet(user?.wallet_address ?? '');
+    setFormBio(user?.bio ?? runner?.bio ?? '');
+    setFormLocation(user?.location ?? '');
+    setFormWallet(user?.preferred_reward_wallet ?? user?.wallet_address ?? '');
     setEditing(true);
   };
 
@@ -263,17 +265,20 @@ export default function ProfileScreen() {
   }
 
   // ── Render: Profile view ─────────────────────────────────────────────
-  const avatarUrl = user?.avatar_url ?? runner?.avatar_url;
+  const avatarUrl = user?.avatar_url ?? runner?.avatarUrl ?? runner?.avatar_url;
   const displayName = runner?.username ?? user?.username ?? 'Runner';
-  const bio = runner?.bio ?? null;
-  const reputation = runner?.reputation ?? user?.reputation_score ?? 0;
+  const bio = user?.bio ?? runner?.bio ?? null;
+  const reputation = Math.round(runner?.reputationScore ?? runner?.reputation ?? user?.reputation_score ?? 0);
   const rank = runner?.rank ?? 0;
-  const aura = runner?.aura ?? 0;
-  const stepBalance = runner?.step_balance ?? user?.step_balance ?? 0;
-  const friendpassSold = runner?.friendpass_sold ?? 0;
-  const friendpassMax = runner?.friendpass_max_supply ?? 0;
-  const friendpassPrice = runner?.friendpass_price ?? 0;
-  const supporterCount = runner?.supporter_count ?? 0;
+  const aura = runner?.aura ?? (runner?.auraLevel ? 1 : 0);
+  const stepBalance = user?.step_balance ?? runner?.step_balance ?? 0;
+  const friendpassSold = runner?.friendPass?.sold ?? runner?.friendpass_sold ?? 0;
+  const friendpassMax = runner?.friendPass?.maxSupply ?? runner?.friendpass_max_supply ?? 0;
+  const friendpassPrice = Number(runner?.friendPass?.currentPrice ?? runner?.friendpass_price ?? 0);
+  const supporterCount = runner?.stats?.totalSupporters ?? runner?.supporter_count ?? 0;
+  const totalTips = runner?.stats?.totalTips ?? '0.000000';
+  const routeCount = routes.length || runner?.route_count || 0;
+  const poiCount = runner?.poi_count || 0;
 
   return (
     <ScrollView
@@ -322,12 +327,12 @@ export default function ProfileScreen() {
           <Text style={styles.statLabel}>Rank</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{aura}</Text>
-          <Text style={styles.statLabel}>Aura</Text>
+          <Text style={styles.statValue}>{routeCount}</Text>
+          <Text style={styles.statLabel}>Trails</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{stepBalance.toLocaleString()}</Text>
-          <Text style={styles.statLabel}>Step Balance</Text>
+          <Text style={styles.statValue}>{poiCount}</Text>
+          <Text style={styles.statLabel}>POIs</Text>
         </View>
       </View>
 
@@ -340,12 +345,32 @@ export default function ProfileScreen() {
         </View>
         <View style={styles.fpRow}>
           <Text style={styles.fpLabel}>Current Price</Text>
-          <Text style={styles.fpValue}>{friendpassPrice} ETH</Text>
+          <Text style={styles.fpValue}>{friendpassPrice.toFixed(4)} ETH</Text>
         </View>
         <View style={styles.fpRow}>
           <Text style={styles.fpLabel}>Supporters</Text>
           <Text style={styles.fpValue}>{supporterCount}</Text>
         </View>
+        <View style={styles.fpRow}>
+          <Text style={styles.fpLabel}>Token Tips</Text>
+          <Text style={styles.fpValue}>{totalTips} ETH</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>Created Trails</Text>
+      <View style={styles.card}>
+        {routes.length === 0 ? (
+          <Text style={styles.emptyText}>You have not created any saved routes yet.</Text>
+        ) : (
+          routes.slice(0, 4).map((route) => (
+            <View key={route.id} style={styles.routeRow}>
+              <Text style={styles.routeTitle}>{route.name}</Text>
+              <Text style={styles.routeMeta}>
+                {route.distance_km.toFixed(1)} km · {route.poi_count || 0} POIs · {route.is_minted ? 'Minted' : 'Draft'}
+              </Text>
+            </View>
+          ))
+        )}
       </View>
 
       {/* Health Metrics */}
@@ -510,6 +535,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#111827',
+  },
+  routeRow: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  routeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  routeMeta: {
+    marginTop: 4,
+    color: '#6b7280',
+    fontSize: 12,
+  },
+  emptyText: {
+    color: '#6b7280',
   },
 
   // Edit form

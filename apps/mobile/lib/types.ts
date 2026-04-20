@@ -19,28 +19,116 @@ export interface AuthResponse {
 /** Authenticated user profile from GET /users/me */
 export interface AuthUser {
   id: string;
-  username: string;
+  username: string | null;
   email: string | null;
   wallet_address: string | null;
   avatar_url: string | null;
+  header_image_url?: string | null;
+  bio?: string | null;
+  location?: string | null;
+  preferred_reward_wallet?: string | null;
   reputation_score: number;
   roles: string[];
   step_balance: number;
+  onboarding_completed?: boolean;
+}
+
+export interface FriendPassInfo {
+  sold: number;
+  maxSupply: number;
+  currentPrice: string;
+  currentPriceFiat?: string;
+  nextPrice?: string;
+}
+
+export interface RunnerStats {
+  totalSupporters: number;
+  totalTips: string;
+  tokenProgress: number;
+}
+
+export interface ActivityFeedItem {
+  type: string;
+  username?: string | null;
+  amount?: string | null;
+  timeAgo: string;
 }
 
 /** Public runner profile from GET /users/runner/{username} */
 export interface RunnerProfile {
+  id?: string;
   username: string;
-  avatar_url: string | null;
+  avatar_url?: string | null;
+  avatarUrl?: string | null;
+  header_image_url?: string | null;
+  headerImageUrl?: string | null;
   bio: string | null;
-  reputation: number;
+  reputation?: number;
+  reputationScore?: number;
   rank: number;
-  aura: number;
-  step_balance: number;
-  friendpass_sold: number;
-  friendpass_max_supply: number;
-  friendpass_price: number;
-  supporter_count: number;
+  aura?: number;
+  auraLevel?: string;
+  step_balance?: number;
+  friendpass_sold?: number;
+  friendpass_max_supply?: number;
+  friendpass_price?: number;
+  supporter_count?: number;
+  tokenStatus?: string;
+  friendPass?: FriendPassInfo;
+  stats?: RunnerStats;
+  activityFeed?: ActivityFeedItem[];
+  poi_count?: number;
+  route_count?: number;
+}
+
+export interface RoutePoint {
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  label?: string;
+  timestamp?: string;
+  manual?: boolean;
+}
+
+export interface RouteCheckpoint {
+  poi_id?: string;
+  title: string;
+  body?: string;
+  photo_url?: string;
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  distance_from_start_m?: number;
+  is_required?: boolean;
+}
+
+export interface RouteSummary {
+  id: string;
+  name: string;
+  difficulty: string;
+  distance_km: number;
+  completion_count: number;
+  description?: string | null;
+  creator_username?: string | null;
+  build_mode?: 'auto' | 'manual';
+  is_loop?: boolean;
+  is_minted?: boolean;
+  poi_count?: number;
+  start_poi_name?: string | null;
+  end_poi_name?: string | null;
+}
+
+export interface CreateRoutePayload {
+  name: string;
+  description?: string;
+  difficulty?: string;
+  estimated_duration_min: number;
+  poi_ids: string[];
+  build_mode?: 'auto' | 'manual';
+  is_loop?: boolean;
+  is_minted?: boolean;
+  route_points?: RoutePoint[];
+  checkpoints?: RouteCheckpoint[];
 }
 
 /** Point of Interest from GET /poi/nearby */

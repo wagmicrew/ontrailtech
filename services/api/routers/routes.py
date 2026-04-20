@@ -1,3 +1,4 @@
+import json
 import math
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,11 @@ class CreateRouteRequest(BaseModel):
     difficulty: str = "moderate"
     estimated_duration_min: int = 60
     poi_ids: List[str]
+    build_mode: str = "manual"
+    is_loop: bool = False
+    is_minted: bool = False
+    route_points: list[dict] = []
+    checkpoints: list[dict] = []
 
 
 class RouteResponse(BaseModel):
@@ -29,6 +35,14 @@ class RouteResponse(BaseModel):
     difficulty: str
     distance_km: float
     completion_count: int
+    description: Optional[str] = None
+    creator_username: Optional[str] = None
+    build_mode: Optional[str] = None
+    is_loop: bool = False
+    is_minted: bool = False
+    poi_count: int = 0
+    start_poi_name: Optional[str] = None
+    end_poi_name: Optional[str] = None
 
 
 class StartRouteRequest(BaseModel):
@@ -47,6 +61,56 @@ class CompleteRouteRequest(BaseModel):
     session_id: str
 
 
+def _extract_route_metadata(route: Route) -> dict:
+    if not route.description:
+        return {}
+    try:
+        parsed = json.loads(route.description)
+        return parsed if isinstance(parsed, dict) else {"summary": route.description}
+    except Exception:
+        return {"summary": route.description}
+
+
+def _poi_overlap_score(existing: list[str], incoming: list[str]) -> float:
+    existing_set = {item for item in existing if item}
+    incoming_set = {item for item in incoming if item}
+    if not existing_set or not incoming_set:
+        return 0.0
+    return len(existing_set & incoming_set) / max(len(existing_set), len(incoming_set))
+
+
+async def _serialize_route(route: Route, db: AsyncSession) -> RouteResponse:
+    meta = _extract_route_metadata(route)
+
+    creator_username = await db.scalar(
+        select(User.username).where(User.id == route.creator_id)
+    )
+
+    poi_rows = await db.execute(
+        select(RoutePOI.position, POI.name)
+        .join(POI, POI.id == RoutePOI.poi_id)
+        .where(RoutePOI.route_id == route.id)
+        .order_by(RoutePOI.position)
+    )
+    ordered_pois = poi_rows.all()
+
+    return RouteResponse(
+        id=str(route.id),
+        name=route.name,
+        difficulty=route.difficulty,
+        distance_km=route.distance_km,
+        completion_count=route.completion_count or 0,
+        description=meta.get("summary") or route.description,
+        creator_username=creator_username,
+        build_mode=meta.get("build_mode", "manual"),
+        is_loop=bool(meta.get("is_loop", False)),
+        is_minted=bool(meta.get("is_minted", False)),
+        poi_count=len(ordered_pois),
+        start_poi_name=ordered_pois[0][1] if ordered_pois else None,
+        end_poi_name=ordered_pois[-1][1] if ordered_pois else None,
+    )
+
+
 @router.post("/create", response_model=RouteResponse)
 async def create_route(
     req: CreateRouteRequest,
@@ -59,6 +123,8 @@ async def create_route(
         raise HTTPException(status_code=400, detail="Route must include at least 2 POIs")
     if req.difficulty not in DIFFICULTY_WEIGHTS:
         raise HTTPException(status_code=400, detail="Invalid difficulty level")
+    if req.build_mode not in {"auto", "manual"}:
+        raise HTTPException(status_code=400, detail="build_mode must be auto or manual")
 
     # Validate POIs exist and calculate distance
     pois = []
@@ -74,9 +140,43 @@ async def create_route(
         for i in range(len(pois) - 1)
     )
 
+    if req.is_minted:
+        existing_routes = (await db.execute(select(Route))).scalars().all()
+        for existing_route in existing_routes:
+            existing_meta = _extract_route_metadata(existing_route)
+            if not existing_meta.get("is_minted"):
+                continue
+
+            existing_poi_ids = [
+                str(pid)
+                for pid in (
+                    await db.execute(
+                        select(RoutePOI.poi_id).where(RoutePOI.route_id == existing_route.id)
+                    )
+                ).scalars().all()
+            ]
+            if _poi_overlap_score(existing_poi_ids, req.poi_ids) >= 0.8:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This route overlaps too closely with an existing minted route.",
+                )
+
+    route_metadata = {
+        "summary": req.description,
+        "build_mode": req.build_mode,
+        "is_loop": req.is_loop,
+        "is_minted": req.is_minted,
+        "route_points": req.route_points,
+        "checkpoints": req.checkpoints,
+        "poi_ids": req.poi_ids,
+    }
+
     route = Route(
-        name=req.name, description=req.description, creator_id=user.id,
-        difficulty=req.difficulty, distance_km=round(total_distance, 2),
+        name=req.name,
+        description=json.dumps(route_metadata),
+        creator_id=user.id,
+        difficulty=req.difficulty,
+        distance_km=round(total_distance, 2),
         estimated_duration_min=req.estimated_duration_min,
     )
     db.add(route)
@@ -84,12 +184,48 @@ async def create_route(
 
     for i, pid in enumerate(req.poi_ids):
         db.add(RoutePOI(route_id=route.id, poi_id=pid, position=i))
+
+    db.add(ReputationEvent(
+        user_id=user.id,
+        event_type="route_created",
+        weight=2.0,
+        event_metadata={
+            "route_id": str(route.id),
+            "build_mode": req.build_mode,
+            "is_minted": req.is_minted,
+        },
+    ))
     await db.flush()
 
-    return RouteResponse(
-        id=str(route.id), name=route.name, difficulty=route.difficulty,
-        distance_km=route.distance_km, completion_count=0,
+    return await _serialize_route(route, db)
+
+
+@router.get("/mine", response_model=list[RouteResponse])
+async def list_my_routes(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Route).where(Route.creator_id == user.id).order_by(Route.created_at.desc())
     )
+    routes = result.scalars().all()
+    return [await _serialize_route(route, db) for route in routes]
+
+
+@router.get("/by-runner/{username}", response_model=list[RouteResponse])
+async def list_routes_by_runner(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+):
+    owner = (await db.execute(select(User).where(User.username == username))).scalar_one_or_none()
+    if not owner:
+        raise HTTPException(status_code=404, detail="Runner not found")
+
+    result = await db.execute(
+        select(Route).where(Route.creator_id == owner.id).order_by(Route.created_at.desc())
+    )
+    routes = result.scalars().all()
+    return [await _serialize_route(route, db) for route in routes]
 
 
 @router.post("/start")

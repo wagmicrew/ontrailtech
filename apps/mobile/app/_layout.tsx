@@ -11,6 +11,8 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
+    const unsubscribe = authManager.subscribeAuthState(setUser);
+
     (async () => {
       try {
         const validUser = await authManager.validateSession();
@@ -21,6 +23,8 @@ export default function RootLayout() {
         setIsLoading(false);
       }
     })();
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {

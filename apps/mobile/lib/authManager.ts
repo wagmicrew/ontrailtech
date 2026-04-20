@@ -16,6 +16,27 @@ import {
 } from './apiClient';
 import type { TokenPair, AuthResponse, AuthUser } from './types';
 
+type AuthStateListener = (user: AuthUser | null) => void;
+
+const authStateListeners = new Set<AuthStateListener>();
+
+function emitAuthState(user: AuthUser | null): void {
+  for (const listener of authStateListeners) {
+    try {
+      listener(user);
+    } catch {
+      // Ignore subscriber errors so auth flow keeps working
+    }
+  }
+}
+
+export function subscribeAuthState(listener: AuthStateListener): () => void {
+  authStateListeners.add(listener);
+  return () => {
+    authStateListeners.delete(listener);
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Token storage (SecureStore — AES-256 encrypted)
 // ---------------------------------------------------------------------------
@@ -51,6 +72,7 @@ export async function storeTokenPair(tokens: TokenPair): Promise<void> {
  */
 export async function clearTokenPair(): Promise<void> {
   await clearTokens();
+  emitAuthState(null);
 }
 
 // ---------------------------------------------------------------------------
@@ -67,10 +89,14 @@ export async function clearTokenPair(): Promise<void> {
  */
 export async function validateSession(): Promise<AuthUser | null> {
   const pair = await getTokenPair();
-  if (!pair) return null;
+  if (!pair) {
+    emitAuthState(null);
+    return null;
+  }
 
   try {
     const user = await apiClient.getMe();
+    emitAuthState(user);
     return user;
   } catch {
     // apiClient already attempted refresh on 401 — if we're here it failed
@@ -91,6 +117,7 @@ async function handleAuthResponse(response: AuthResponse): Promise<void> {
     accessToken: response.access_token,
     refreshToken: response.refresh_token,
   });
+  emitAuthState(response.user);
 }
 
 /**
@@ -266,4 +293,5 @@ export const authManager = {
   loginWithApple,
   loginWithWallet,
   logout,
+  subscribeAuthState,
 };

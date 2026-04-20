@@ -11,9 +11,11 @@ import type {
   AuthResponse,
   AuthUser,
   CheckinPayload,
+  CreateRoutePayload,
   HealthSyncPayload,
   POI,
   ProfileUpdate,
+  RouteSummary,
   RunnerProfile,
   StepSyncPayload,
 } from './types';
@@ -254,6 +256,18 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ refresh_token: refreshToken }),
     }),
+
+  // ── Trail Studio ─────────────────────────────────────────────────────
+  createRoute: (payload: CreateRoutePayload) =>
+    request<RouteSummary>('/route/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getMyRoutes: () => request<RouteSummary[]>('/route/mine'),
+
+  getRoutesByRunner: (username: string) =>
+    request<RouteSummary[]>(`/route/by-runner/${username}`),
 
   // ── Profile ──────────────────────────────────────────────────────────
   getMe: () => request<AuthUser>('/users/me'),
