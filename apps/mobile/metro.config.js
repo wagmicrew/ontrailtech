@@ -27,6 +27,7 @@ config.resolver.extraNodeModules = {
 	react: resolvePackagePath('react'),
 	'react-dom': resolvePackagePath('react-dom'),
 	'react-native': resolvePackagePath('react-native'),
+	'@react-native/virtualized-lists': resolvePackagePath('@react-native', 'virtualized-lists'),
 	'react/jsx-runtime': resolvePackagePath('react', 'jsx-runtime.js'),
 	'react/jsx-dev-runtime': resolvePackagePath('react', 'jsx-dev-runtime.js'),
 };
