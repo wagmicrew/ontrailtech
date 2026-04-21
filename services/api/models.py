@@ -340,6 +340,26 @@ class SiteSetting(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# ── Installed Apps ──
+
+class InstalledApp(Base):
+    __tablename__ = "installed_apps"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    app_id = Column(String(255), unique=True, nullable=False)   # slug from manifest
+    name = Column(String(255), nullable=False)
+    version = Column(String(50), nullable=False)
+    description = Column(Text, nullable=True)
+    author = Column(String(255), nullable=True)
+    icon = Column(Text, nullable=True)                          # SVG text or data URI
+    status = Column(String(50), default="installed")            # installed | disabled
+    settings = Column(JSON, default=dict)                       # current saved settings
+    settings_schema = Column(JSON, default=list)                # field definitions for CMS UI
+    tables_created = Column(JSON, default=list)                 # table names created by install.sql
+    manifest = Column(JSON, default=dict)                       # full manifest.json contents
+    installed_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ── Referral Rewards ──
 
 class ReferralReward(Base):
