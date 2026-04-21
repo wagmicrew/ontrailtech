@@ -2,10 +2,10 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, text, inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from database import get_db
 from models import AdminConfig, TokenSimulation, AuditLog, User, UserRole, ACLRole
@@ -453,3 +453,266 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
     )
     settings = result.scalars().all()
     return {s.setting_key: s.setting_value for s in settings}
+
+
+# ── Fitness Integration Config ──
+
+KNOWN_FITNESS_PROVIDERS = {"strava", "samsung_health", "apple_health", "ontrail"}
+
+SENSITIVE_FIELDS = {"client_secret", "webhook_verify_token", "app_secret", "key_id", "private_key", "webhook_secret", "api_key"}
+
+
+def _fitness_config_key(provider_id: str, field: str) -> str:
+    return f"fitness.{provider_id}.{field}"
+
+
+def _fitness_enabled_key(provider_id: str) -> str:
+    return f"fitness.{provider_id}.enabled"
+
+
+@router.get("/fitness/config")
+async def get_fitness_config(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AdminConfig).where(AdminConfig.config_key.like("fitness.%"))
+    )
+    rows = result.scalars().all()
+
+    configs: Dict[str, Dict[str, str]] = {}
+    enabled: Dict[str, bool] = {}
+
+    for row in rows:
+        parts = row.config_key.split(".", 2)  # fitness.<provider>.<field>
+        if len(parts) < 3:
+            continue
+        _, provider, field = parts
+        if field == "enabled":
+            enabled[provider] = bool(row.config_value)
+        else:
+            if provider not in configs:
+                configs[provider] = {}
+            # Mask sensitive fields
+            if field in SENSITIVE_FIELDS and row.config_value:
+                configs[provider][field] = "••••••••"
+            else:
+                configs[provider][field] = str(row.config_value) if row.config_value is not None else ""
+
+    return {"configs": configs, "enabled": enabled}
+
+
+class FitnessProviderConfigRequest(BaseModel):
+    config: Dict[str, str]
+    enabled: bool
+
+
+@router.put("/fitness/config/{provider_id}")
+async def update_fitness_config(
+    provider_id: str,
+    req: FitnessProviderConfigRequest,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if provider_id not in KNOWN_FITNESS_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_id}")
+
+    # Update enabled flag
+    enabled_key = _fitness_enabled_key(provider_id)
+    result = await db.execute(select(AdminConfig).where(AdminConfig.config_key == enabled_key))
+    cfg = result.scalar_one_or_none()
+    if cfg:
+        cfg.config_value = req.enabled
+        cfg.updated_by = user.id
+    else:
+        cfg = AdminConfig(config_key=enabled_key, config_value=req.enabled, updated_by=user.id)
+        db.add(cfg)
+
+    # Update individual fields (skip masked sentinel values)
+    for field, value in req.config.items():
+        if value == "••••••••":
+            continue  # unchanged sensitive field
+        key = _fitness_config_key(provider_id, field)
+        result = await db.execute(select(AdminConfig).where(AdminConfig.config_key == key))
+        existing = result.scalar_one_or_none()
+        if existing:
+            existing.config_value = value
+            existing.updated_by = user.id
+        else:
+            db.add(AdminConfig(config_key=key, config_value=value, updated_by=user.id))
+
+    db.add(AuditLog(
+        user_id=user.id,
+        action="fitness_config_updated",
+        resource_type="admin_config",
+        resource_id=provider_id,
+        event_metadata={"provider": provider_id, "enabled": req.enabled},
+    ))
+    await db.flush()
+    return {"status": "updated", "provider": provider_id}
+
+
+@router.get("/fitness/stats")
+async def get_fitness_stats(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import func
+    from models import ReputationEvent, Step
+
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Users who have synced steps today
+    synced_today = await db.execute(
+        select(func.count(func.distinct(Step.user_id))).where(Step.recorded_at >= today_start)
+    )
+    synced_users = synced_today.scalar() or 0
+
+    # Total steps today
+    steps_result = await db.execute(
+        select(func.coalesce(func.sum(Step.step_count), 0)).where(Step.recorded_at >= today_start)
+    )
+    steps_today = steps_result.scalar() or 0
+
+    # Reputation points from fitness today
+    rep_result = await db.execute(
+        select(func.coalesce(func.sum(ReputationEvent.weight), 0.0)).where(
+            ReputationEvent.event_type == "steps",
+            ReputationEvent.created_at >= today_start,
+        )
+    )
+    rep_today = float(rep_result.scalar() or 0.0)
+
+    # Active connections (providers that are enabled)
+    cfg_result = await db.execute(
+        select(AdminConfig).where(
+            AdminConfig.config_key.like("fitness.%.enabled"),
+            AdminConfig.config_value == True,  # noqa: E712
+        )
+    )
+    active_connections = len(cfg_result.scalars().all())
+
+    return {
+        "synced_users": synced_users,
+        "steps_today": int(steps_today),
+        "rep_today": rep_today,
+        "active_connections": active_connections,
+    }
+
+
+# ── Database Browser ──
+
+# Allowlist of tables that can be browsed
+BROWSABLE_TABLES = {
+    "users", "wallets", "auth_nonces", "friends", "grid_cells", "poi_slots", "pois",
+    "routes", "runner_tokens", "admin_config", "site_settings", "audit_logs",
+    "token_simulations", "reputation_events",
+}
+
+
+def _row_to_dict(row: Any) -> dict:
+    result = {}
+    for key, val in row._mapping.items():
+        if hasattr(val, 'isoformat'):
+            result[key] = val.isoformat()
+        elif isinstance(val, Decimal):
+            result[key] = float(val)
+        else:
+            result[key] = val
+    return result
+
+
+@router.get("/db/table/{table_name}")
+async def browse_table(
+    table_name: str,
+    limit: int = 30,
+    offset: int = 0,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if table_name not in BROWSABLE_TABLES:
+        raise HTTPException(status_code=400, detail=f"Table '{table_name}' is not browsable")
+    if limit > 200:
+        limit = 200
+
+    rows_result = await db.execute(
+        text(f"SELECT * FROM {table_name} ORDER BY 1 LIMIT :limit OFFSET :offset"),
+        {"limit": limit, "offset": offset},
+    )
+    rows = rows_result.fetchall()
+    columns = list(rows_result.keys()) if rows_result.keys() else []
+
+    return {
+        "table": table_name,
+        "columns": columns,
+        "rows": [_row_to_dict(r) for r in rows],
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+class PatchRowRequest(BaseModel):
+    pass  # not used; endpoint accepts Dict[str, Any] directly
+
+
+@router.patch("/db/table/{table_name}/{row_id}")
+async def patch_table_row(
+    table_name: str,
+    row_id: str,
+    payload: Dict[str, Any],
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if table_name not in BROWSABLE_TABLES:
+        raise HTTPException(status_code=400, detail=f"Table '{table_name}' is not editable")
+
+    # Prevent editing protected columns
+    protected = {"id", "created_at"}
+    payload = {k: v for k, v in payload.items() if k not in protected}
+    if not payload:
+        raise HTTPException(status_code=400, detail="No editable fields provided")
+
+    set_clause = ", ".join(f"{k} = :{k}" for k in payload)
+    params = {**payload, "_row_id": row_id}
+    await db.execute(
+        text(f"UPDATE {table_name} SET {set_clause} WHERE id = :_row_id"),
+        params,
+    )
+    db.add(AuditLog(
+        user_id=user.id,
+        action="db_row_updated",
+        resource_type=table_name,
+        resource_id=row_id,
+        event_metadata={"fields": list(payload.keys())},
+    ))
+    await db.flush()
+    return {"status": "updated", "table": table_name, "id": row_id}
+
+
+class SQLQueryRequest(BaseModel):
+    query: str
+
+
+_ALLOWED_SQL_PREFIXES = ("select",)
+
+
+@router.post("/db/sql")
+async def run_sql_query(
+    req: SQLQueryRequest,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Execute read-only SQL SELECT queries for admin inspection."""
+    stripped = req.query.strip().lower()
+    if not any(stripped.startswith(p) for p in _ALLOWED_SQL_PREFIXES):
+        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed")
+
+    result = await db.execute(text(req.query))
+    rows = result.fetchall()
+    columns = list(result.keys()) if result.keys() else []
+
+    return {
+        "columns": columns,
+        "rows": [[str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v for v in row] for row in rows],
+        "row_count": len(rows),
+    }
