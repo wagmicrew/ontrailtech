@@ -16,6 +16,7 @@ from database import get_db
 from dependencies import get_current_user, get_user_roles
 from models import AuthNonce, User, Wallet
 from otp_service import otp_service
+from privy_auth import get_setting
 from rate_limit import rate_limit_auth, rate_limit_otp, rate_limit_register
 from token_manager import token_manager
 
@@ -120,6 +121,30 @@ def validate_password(password: str) -> bool:
     if not re.search(r"\d", password):
         return False
     return True
+
+
+def normalize_otp_code(code: str) -> str:
+    """Strip whitespace and separators from OTP input so autofill/paste stays reliable."""
+    return re.sub(r"\D", "", code or "")
+
+
+async def get_google_client_id_allowlist(db: AsyncSession) -> set[str]:
+    keys = [
+        "google_client_id",
+        "google_web_client_id",
+        "google_ios_client_id",
+        "google_android_client_id",
+        "google_expo_client_id",
+    ]
+    values = {settings.google_client_id}
+
+    for key in keys:
+        value = await get_setting(db, key)
+        if value:
+            values.add(value.strip())
+
+    values.discard("")
+    return values
 
 
 async def build_auth_response(user: User, db: AsyncSession) -> AuthResponse:
@@ -239,6 +264,7 @@ async def request_otp(
     return {
         "message": "A verification code has been sent to your email.",
         "is_new_user": is_new_user,
+        "expires_in_seconds": 900,
     }
 
 
@@ -251,8 +277,12 @@ async def verify_otp(
     await rate_limit_auth(request)
 
     email = req.email.strip().lower()
+    normalized_code = normalize_otp_code(req.code)
 
-    valid = await otp_service.verify_otp(email, req.code, req.purpose)
+    if len(normalized_code) != 6:
+        raise HTTPException(status_code=422, detail="OTP codes must be 6 digits")
+
+    valid = await otp_service.verify_otp(email, normalized_code, req.purpose)
     if not valid:
         raise HTTPException(status_code=401, detail="Invalid or expired OTP")
 
@@ -325,7 +355,8 @@ async def google_auth(
     data = resp.json()
 
     # Verify the token was issued for this application when a client ID is configured
-    if settings.google_client_id and data.get("aud") != settings.google_client_id:
+    allowed_client_ids = await get_google_client_id_allowlist(db)
+    if allowed_client_ids and data.get("aud") not in allowed_client_ids:
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
     google_email = data.get("email")

@@ -123,7 +123,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'em
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.2 }}
         className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 relative"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
       >
         {/* Close button */}
         <button
@@ -297,9 +297,27 @@ function GoogleTab({ onSuccess, onError }: {
 }) {
   const btnRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
+  const [clientId, setClientId] = useState(import.meta.env.VITE_GOOGLE_CLIENT_ID || '');
 
   useEffect(() => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    let active = true;
+
+    api.getPublicSettings()
+      .then((settings) => {
+        if (!active) return;
+        setClientId(settings.google_web_client_id || settings.google_client_id || import.meta.env.VITE_GOOGLE_CLIENT_ID || '');
+      })
+      .catch(() => {
+        if (!active) return;
+        setClientId(import.meta.env.VITE_GOOGLE_CLIENT_ID || '');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!clientId) return;
 
     const init = () => {
@@ -349,7 +367,7 @@ function GoogleTab({ onSuccess, onError }: {
         return () => clearInterval(interval);
       }
     }
-  }, [onSuccess, onError]);
+  }, [clientId, onSuccess, onError]);
 
   return (
     <div className="space-y-4 py-4">
@@ -361,8 +379,8 @@ function GoogleTab({ onSuccess, onError }: {
         </div>
       )}
       <div ref={btnRef} className="flex justify-center min-h-[44px]" />
-      {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
-        <p className="text-xs text-amber-500 text-center">⚠ VITE_GOOGLE_CLIENT_ID not configured</p>
+      {!clientId && (
+        <p className="text-xs text-amber-500 text-center">Google web client ID is not configured in site settings yet.</p>
       )}
     </div>
   );
@@ -402,9 +420,9 @@ function WalletTab({ onSuccess, onError }: {
       <div className="space-y-4 py-4">
         <p className="text-sm text-gray-500 text-center">Connect your Ethereum wallet to sign in with SIWE</p>
         <ConnectKitButton.Custom>
-          {({ show }) => (
+          {({ show }: { show?: () => void }) => (
             <button
-              onClick={show}
+              onClick={() => show?.()}
               className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl py-3 font-medium text-sm flex items-center justify-center gap-2 hover:from-blue-600 hover:to-indigo-700 transition-all"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

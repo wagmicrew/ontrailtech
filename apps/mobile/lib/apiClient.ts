@@ -59,6 +59,14 @@ export interface CheckinResult {
   checkin_id: string;
 }
 
+export interface PublicSettings {
+  google_client_id?: string;
+  google_web_client_id?: string;
+  google_ios_client_id?: string;
+  google_android_client_id?: string;
+  google_expo_client_id?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Session-expired callback – set by the app root layout
 // ---------------------------------------------------------------------------
@@ -210,7 +218,7 @@ export async function request<T>(
 export const apiClient = {
   // ── Auth ─────────────────────────────────────────────────────────────
   requestOtp: (email: string) =>
-    request<{ message: string; is_new_user: boolean }>('/auth/request-otp', {
+    request<{ message: string; is_new_user: boolean; expires_in_seconds?: number }>('/auth/request-otp', {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
@@ -218,7 +226,7 @@ export const apiClient = {
   verifyOtp: (email: string, code: string) =>
     request<AuthResponse>('/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ email, code }),
+      body: JSON.stringify({ email, code, purpose: 'login' }),
     }),
 
   authGoogle: (idToken: string) =>
@@ -256,6 +264,8 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ refresh_token: refreshToken }),
     }),
+
+  getPublicSettings: () => request<PublicSettings>('/admin/public-settings'),
 
   // ── Trail Studio ─────────────────────────────────────────────────────
   createRoute: (payload: CreateRoutePayload) =>

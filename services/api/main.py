@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from config import get_settings
 from routers import auth, users, pois, routes, tokens, admin, onboarding, friendpass, identity, referrals, runners, graph, aura, store, mobile, expo_admin
+from kernel.ws_router import router as kernel_ws_router
+from kernel.kernel_router import router as kernel_rest_router
 from error_handlers import register_error_handlers
 from security import register_security
 
@@ -45,6 +47,8 @@ app.include_router(aura.router, prefix="/aura", tags=["Aura"])
 app.include_router(store.router, prefix="/store", tags=["Store"])
 app.include_router(mobile.router, prefix="", tags=["Mobile"])
 app.include_router(expo_admin.router, prefix="/admin/expo", tags=["Expo Admin"])
+app.include_router(kernel_ws_router)
+app.include_router(kernel_rest_router)
 
 register_error_handlers(app)
 register_security(app)

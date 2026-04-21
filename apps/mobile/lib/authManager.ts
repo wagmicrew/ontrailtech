@@ -18,6 +18,10 @@ import type { TokenPair, AuthResponse, AuthUser } from './types';
 
 type AuthStateListener = (user: AuthUser | null) => void;
 
+function normalizeOtpCode(code: string): string {
+  return code.replace(/\D/g, '');
+}
+
 const authStateListeners = new Set<AuthStateListener>();
 
 function emitAuthState(user: AuthUser | null): void {
@@ -130,7 +134,7 @@ export async function loginWithOtp(
   email: string,
   code: string,
 ): Promise<AuthResponse> {
-  const response = await apiClient.verifyOtp(email, code);
+  const response = await apiClient.verifyOtp(email, normalizeOtpCode(code));
   await handleAuthResponse(response);
   return response;
 }
@@ -140,7 +144,7 @@ export async function loginWithOtp(
  */
 export async function requestOtp(
   email: string,
-): Promise<{ message: string; is_new_user: boolean }> {
+): Promise<{ message: string; is_new_user: boolean; expires_in_seconds?: number }> {
   return apiClient.requestOtp(email);
 }
 

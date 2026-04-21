@@ -70,12 +70,8 @@ export default function Layout() {
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-white to-emerald-50/40">
       <nav className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/85 px-6 py-3 backdrop-blur-xl shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
         <div className="max-w-7xl mx-auto flex items-center">
-          <Link to="/" className="flex items-center gap-3 group">
-            <img src="/ontrail-logo.png" alt="OnTrail" className="h-6 opacity-90" />
-            <div className="hidden lg:block">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-600">OnTrail</p>
-              <p className="text-xs text-slate-500">Outdoor reputation platform</p>
-            </div>
+          <Link to="/" className="flex items-center group">
+            <img src="/ontrail-logo.png" alt="OnTrail" className="h-7 opacity-95 transition group-hover:opacity-100" />
           </Link>
 
           <div className="hidden md:flex items-center gap-1 ml-8">
@@ -152,7 +148,7 @@ export default function Layout() {
                           <p className="text-xs text-gray-400">No wallet connected</p>
                         )}
                         <ConnectKitButton.Custom>
-                          {({ show }) => (
+                          {({ show }: { show?: () => void }) => (
                             <button onClick={() => { show?.(); setMenuOpen(false); }}
                               className="mt-2 w-full text-xs bg-gray-50 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-100 transition text-center">
                               {wallet ? 'Manage Wallet' : 'Connect External Wallet'}
@@ -199,8 +195,8 @@ export default function Layout() {
                   Get Started
                 </button>
                 <ConnectKitButton.Custom>
-                  {({ show }) => (
-                    <button onClick={show}
+                  {({ show }: { show?: () => void }) => (
+                    <button onClick={() => show?.()}
                       className="hidden md:block rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
                       Connect Wallet
                     </button>
@@ -236,9 +232,19 @@ export default function Layout() {
         </div>
       </nav>
 
-      <footer className={`hidden md:block bg-white/50 border-t border-gray-100 text-xs text-gray-400 py-6 ${location.pathname === '/' ? '!hidden' : ''}`}>
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-          <p>OnTrail — Web3 SocialFi for Explorers • Built on Base</p>
+      <footer className="hidden border-t border-slate-800 bg-slate-950 py-8 text-slate-300 md:block">
+        <div className="max-w-7xl mx-auto flex flex-col gap-6 px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">OnTrail</p>
+            <p className="mt-1 max-w-xl text-sm text-slate-400">
+              Outdoor reputation, route discovery, and runner communities in one live platform.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
+              <span>app.ontrail.tech</span>
+              <span>api.ontrail.tech</span>
+              <span>Built on Base</span>
+            </div>
+          </div>
           <ExpoQRFooter />
         </div>
       </footer>
@@ -285,21 +291,22 @@ function ExpoQRFooter() {
   if (!expoUrl) return null;
 
   return (
-    <div className="hidden md:flex items-center gap-4">
+    <div className="hidden md:flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
       <QRCodeSVG
         value={expoUrl}
         size={120}
         level="M"
         bgColor="transparent"
-        fgColor="#374151"
+        fgColor="#e2e8f0"
       />
       <div className="flex flex-col gap-1">
-        <span className="text-sm font-medium text-gray-600">Try the mobile app</span>
+        <span className="text-sm font-medium text-white">Scan for the mobile app</span>
+        <span className="text-xs text-slate-400">Current live Expo companion</span>
         <a
           href={expoWebUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-green-600 hover:text-green-700 transition-colors"
+          className="text-emerald-300 transition-colors hover:text-emerald-200"
         >
           expo.ontrail.tech
         </a>

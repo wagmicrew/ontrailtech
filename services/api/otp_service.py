@@ -1,6 +1,7 @@
 """OTP generation, verification and email dispatch backed by Redis + aiosmtplib."""
 import json
 import logging
+import re
 import secrets
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -108,6 +109,7 @@ class OTPService:
     async def verify_otp(self, email: str, code: str, purpose: str = "login") -> bool:
         """Verify the OTP code and purpose. Deletes on success (single-use)."""
         key = f"otp:{email}"
+      normalized_code = re.sub(r"\D", "", code or "")
         raw = await redis.get(key)
         if raw is None:
             return False
@@ -115,7 +117,7 @@ class OTPService:
             data = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             return False
-        if data.get("code") == code and data.get("purpose") == purpose:
+      if data.get("code") == normalized_code and data.get("purpose") == purpose:
             await redis.delete(key)
             return True
         return False

@@ -278,6 +278,8 @@ export const api = {
 
   // --- Routes ---
   createRoute: (data: any) => request<any>('/route/create', { method: 'POST', body: JSON.stringify(data) }),
+  getMyRoutes: () => request<any[]>('/route/mine'),
+  getRoutesByRunner: (username: string) => request<any[]>(`/route/by-runner/${username}`),
   startRoute: (routeId: string) =>
     request<any>('/route/start', { method: 'POST', body: JSON.stringify({ route_id: routeId }) }),
   checkin: (data: any) => request<any>('/route/checkin', { method: 'POST', body: JSON.stringify(data) }),

@@ -1,13 +1,16 @@
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
 from database import get_db
-from models import AdminConfig, TokenSimulation, AuditLog, User
+from models import AdminConfig, TokenSimulation, AuditLog, User, UserRole, ACLRole
 from dependencies import require_admin
+from redis_client import redis
 
 router = APIRouter()
 
@@ -24,6 +27,215 @@ class SimulationRequest(BaseModel):
     investor_count: int = 100
     avg_investment: float = 1.0
     tge_threshold: float = 10.0
+
+
+class UpdateAdminUserRequest(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    roles: Optional[list[str]] = None
+
+
+def _serialize_user(user: User, roles: list[str]) -> dict[str, Any]:
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "wallet_address": user.wallet_address,
+        "roles": roles,
+        "reputation_score": float(user.reputation_score or 0.0),
+        "onboarding_completed": bool(user.onboarding_completed),
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+    }
+
+
+async def _get_roles_by_user_ids(db: AsyncSession, user_ids: list[Any]) -> dict[str, list[str]]:
+    if not user_ids:
+        return {}
+
+    result = await db.execute(
+        select(UserRole.user_id, ACLRole.role_name)
+        .join(ACLRole, UserRole.role_id == ACLRole.id)
+        .where(UserRole.user_id.in_(user_ids))
+    )
+
+    roles_by_user: dict[str, list[str]] = {str(user_id): [] for user_id in user_ids}
+    for user_id, role_name in result.all():
+        roles_by_user.setdefault(str(user_id), []).append(role_name)
+    return roles_by_user
+
+
+async def _get_refresh_sessions_for_user(user_id: str) -> list[dict[str, Any]]:
+    sessions = []
+    async for key in redis.scan_iter(match="refresh_token:*"):
+        token_user_id = await redis.get(key)
+        if token_user_id != user_id:
+            continue
+
+        token = key.split(":", 1)[1]
+        ttl = await redis.ttl(key)
+        expires_at = None
+        if ttl and ttl > 0:
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
+
+        sessions.append(
+            {
+                "id": token,
+                "token_hash": token,
+                "ip_address": None,
+                "created_at": None,
+                "expires_at": expires_at,
+            }
+        )
+
+    return sessions
+
+
+@router.get("/users")
+async def get_admin_users(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+    q: str | None = None,
+):
+    limit = max(1, min(limit, 100))
+    offset = max(offset, 0)
+
+    stmt = select(User).order_by(User.created_at.desc()).limit(limit).offset(offset)
+    if q:
+        pattern = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                User.username.ilike(pattern),
+                User.email.ilike(pattern),
+                User.wallet_address.ilike(pattern),
+            )
+        )
+
+    result = await db.execute(stmt)
+    users = list(result.scalars().all())
+    roles_by_user = await _get_roles_by_user_ids(db, [user.id for user in users])
+    return [_serialize_user(record, roles_by_user.get(str(record.id), [])) for record in users]
+
+
+@router.patch("/users/{user_id}")
+async def update_admin_user(
+    user_id: str,
+    req: UpdateAdminUserRequest,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if req.username is not None:
+        username = req.username.strip() or None
+        if username:
+            existing = await db.execute(select(User).where(User.username == username, User.id != target.id))
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail="Username already in use")
+        target.username = username
+
+    if req.email is not None:
+        email = req.email.strip().lower() or None
+        if email:
+            existing = await db.execute(select(User).where(User.email == email, User.id != target.id))
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail="Email already in use")
+        target.email = email
+
+    if req.roles is not None:
+        normalized_roles = sorted({role.strip() for role in req.roles if role and role.strip()})
+        if normalized_roles:
+            role_result = await db.execute(select(ACLRole).where(ACLRole.role_name.in_(normalized_roles)))
+            role_rows = list(role_result.scalars().all())
+            role_map = {role.role_name: role for role in role_rows}
+            missing_roles = [role_name for role_name in normalized_roles if role_name not in role_map]
+            if missing_roles:
+                raise HTTPException(status_code=400, detail=f"Unknown roles: {', '.join(missing_roles)}")
+        else:
+            role_rows = []
+
+        await db.execute(delete(UserRole).where(UserRole.user_id == target.id))
+        for role in role_rows:
+            db.add(UserRole(user_id=target.id, role_id=role.id))
+
+    db.add(AuditLog(
+        user_id=user.id,
+        action="admin_user_updated",
+        resource_type="user",
+        resource_id=str(target.id),
+        event_metadata={
+            "username": target.username,
+            "email": target.email,
+            "roles": req.roles,
+        },
+    ))
+    await db.flush()
+
+    roles_by_user = await _get_roles_by_user_ids(db, [target.id])
+    return _serialize_user(target, roles_by_user.get(str(target.id), []))
+
+
+@router.delete("/users/{user_id}")
+async def delete_admin_user(
+    user_id: str,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if str(target.id) == str(user.id):
+        raise HTTPException(status_code=400, detail="You cannot delete your own account from the admin panel")
+
+    await db.execute(delete(UserRole).where(UserRole.user_id == target.id))
+
+    async for key in redis.scan_iter(match="refresh_token:*"):
+        token_user_id = await redis.get(key)
+        if token_user_id == str(target.id):
+            await redis.delete(key)
+
+    try:
+        await db.delete(target)
+        db.add(AuditLog(
+            user_id=user.id,
+            action="admin_user_deleted",
+            resource_type="user",
+            resource_id=user_id,
+        ))
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="User cannot be deleted because related records still exist",
+        )
+
+    return {"status": "deleted", "id": user_id}
+
+
+@router.get("/users/{user_id}/sessions")
+async def get_admin_user_sessions(
+    user_id: str,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User.id).where(User.id == user_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return await _get_refresh_sessions_for_user(user_id)
+
+
+@router.delete("/sessions/{session_id}")
+async def revoke_admin_session(
+    session_id: str,
+    user: User = Depends(require_admin),
+):
+    await redis.delete(f"refresh_token:{session_id}")
+    return {"status": "revoked", "id": session_id}
 
 
 @router.post("/config")
@@ -224,7 +436,18 @@ async def update_aura_config(
 async def get_public_settings(db: AsyncSession = Depends(get_db)):
     """Returns non-sensitive settings needed by the frontend."""
     from models import SiteSetting
-    public_keys = ["privy_app_id", "walletconnect_project_id", "site_name", "site_tagline", "mapbox_token"]
+    public_keys = [
+        "privy_app_id",
+        "walletconnect_project_id",
+        "site_name",
+        "site_tagline",
+        "mapbox_token",
+        "google_client_id",
+        "google_web_client_id",
+        "google_ios_client_id",
+        "google_android_client_id",
+        "google_expo_client_id",
+    ]
     result = await db.execute(
         select(SiteSetting).where(SiteSetting.setting_key.in_(public_keys))
     )

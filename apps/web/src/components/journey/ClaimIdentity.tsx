@@ -16,7 +16,7 @@ export default function ClaimIdentity({ userId, onClaimed, onSkip }: ClaimIdenti
   const [available, setAvailable] = useState<boolean | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounced availability check
   useEffect(() => {

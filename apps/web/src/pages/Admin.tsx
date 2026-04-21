@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../lib/api';
 import UsersPage from './admin/UsersPage';
 import DatabasePage from './admin/DatabasePage';
 import Web3Page from './admin/Web3Page';
@@ -181,10 +182,46 @@ export default function Admin() {
 }
 
 /* ── Config Section ── */
+const GOOGLE_SETTING_FIELDS = [
+  { key: 'google_client_id', label: 'Shared Google client ID', placeholder: 'Base fallback client ID', sensitive: false },
+  { key: 'google_web_client_id', label: 'Web client ID', placeholder: 'Used by Google Identity Services on the website', sensitive: false },
+  { key: 'google_expo_client_id', label: 'Expo client ID', placeholder: 'Used by Expo AuthSession / Expo Go', sensitive: false },
+  { key: 'google_ios_client_id', label: 'iOS client ID', placeholder: 'Used by the native iOS app flow', sensitive: false },
+  { key: 'google_android_client_id', label: 'Android client ID', placeholder: 'Used by the native Android app flow', sensitive: false },
+  { key: 'google_client_secret', label: 'Google client secret', placeholder: 'Keep this private; server-side only', sensitive: true },
+];
+
 function ConfigSection() {
   const [configKey, setConfigKey] = useState('');
   const [configValue, setConfigValue] = useState('');
   const [message, setMessage] = useState('');
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [siteSettings, setSiteSettings] = useState<Record<string, string>>({});
+  const [loadingSettings, setLoadingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    setLoadingSettings(true);
+    api.getAllSettings()
+      .then((rows) => {
+        if (!active) return;
+        const nextSettings = Object.fromEntries(rows.map((row) => [row.key, row.value || '']));
+        setSiteSettings(nextSettings);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setSettingsMessage(`✗ ${err.message || 'Could not load site settings'}`);
+      })
+      .finally(() => {
+        if (active) setLoadingSettings(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const updateConfig = async () => {
     try {
@@ -202,12 +239,66 @@ function ConfigSection() {
     } catch (e: any) { setMessage(`✗ ${e.message}`); }
   };
 
+  const updateGoogleSettings = async () => {
+    setSavingSettings(true);
+    setSettingsMessage('');
+    try {
+      await Promise.all(
+        GOOGLE_SETTING_FIELDS.map((field) => api.updateSetting(field.key, siteSettings[field.key] || '')),
+      );
+      setSettingsMessage('✓ Google OAuth site settings updated');
+    } catch (e: any) {
+      setSettingsMessage(`✗ ${e.message || 'Failed to update Google OAuth settings'}`);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-gray-900">Configuration</h2>
         <p className="text-sm text-gray-500 mt-1">Update runtime configuration parameters</p>
       </div>
+
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4 mb-5">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Google OAuth Site Settings</h3>
+            <p className="text-sm text-gray-500 mt-1">These values drive Google login for the web app, Expo app, and the backend audience allowlist.</p>
+          </div>
+          <button
+            onClick={updateGoogleSettings}
+            disabled={loadingSettings || savingSettings}
+            className="px-5 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {savingSettings ? 'Saving…' : 'Save Google settings'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {GOOGLE_SETTING_FIELDS.map((field) => (
+            <div key={field.key}>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
+              <input
+                type={field.sensitive ? 'password' : 'text'}
+                value={siteSettings[field.key] || ''}
+                onChange={(e) => setSiteSettings((current) => ({ ...current, [field.key]: e.target.value }))}
+                placeholder={field.placeholder}
+                disabled={loadingSettings}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 disabled:bg-gray-50"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+          Public client IDs are exposed through public settings for the login screens. The client secret stays admin-only and is not returned by the public settings endpoint.
+        </div>
+
+        {settingsMessage && <p className={`mt-4 text-sm ${settingsMessage.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>{settingsMessage}</p>}
+      </div>
+
       <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 max-w-lg">
         <div className="space-y-4">
           <div>
