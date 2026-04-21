@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSnapshot } from 'valtio';
 import { systemStore } from '../../core/system-store';
+import {
+  windowPrefsStore, resetWindowPrefs,
+  type CornerRadius, type TitlebarStyle, type WindowPrefs,
+} from '../../core/window-prefs-store';
 
 type Theme = 'dark-os' | 'light-os' | 'midnight';
 
@@ -22,11 +26,15 @@ function savePrefs(prefs: object) {
 
 export default function SettingsApp() {
   const snap = useSnapshot(systemStore);
+  const winPrefs = useSnapshot(windowPrefsStore);
   const [prefs, setPrefs] = useState(() => ({ theme: 'dark-os' as Theme, animations: true, ...loadPrefs() }));
 
   useEffect(() => { savePrefs(prefs); }, [prefs]);
 
   const set = (key: string, value: unknown) => setPrefs((p: typeof prefs) => ({ ...p, [key]: value }));
+  const setWin = <K extends keyof WindowPrefs>(key: K, value: WindowPrefs[K]) => {
+    windowPrefsStore[key] = value;
+  };
 
   return (
     <div className="p-6 space-y-6 bg-white min-h-full">
@@ -34,8 +42,6 @@ export default function SettingsApp() {
         <h2 className="text-2xl font-semibold text-gray-900">Settings</h2>
         <p className="text-sm text-gray-500 mt-1">Appearance, behavior, and system information</p>
       </div>
-
-      {/* Desktop Theme */}
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Desktop Theme</h3>
         <div className="grid grid-cols-3 gap-3">
@@ -68,6 +74,135 @@ export default function SettingsApp() {
               <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${prefs.animations ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
           </label>
+        </div>
+      </section>
+
+      {/* Window Appearance */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Window Appearance</h3>
+          <button onClick={resetWindowPrefs} className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2">Reset to defaults</button>
+        </div>
+
+        <div className="space-y-3 bg-gray-50 rounded-xl p-4">
+
+          {/* Glassmorphism toggle */}
+          <label className="flex items-center justify-between cursor-pointer">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Glassmorphism</p>
+              <p className="text-xs text-gray-500">Translucent blurred window frames</p>
+            </div>
+            <button onClick={() => setWin('glassmorphism', !winPrefs.glassmorphism)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${winPrefs.glassmorphism ? 'bg-indigo-500' : 'bg-gray-200'}`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${winPrefs.glassmorphism ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </label>
+
+          {/* Blur amount */}
+          {winPrefs.glassmorphism && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-800">Blur intensity</p>
+                <span className="text-xs font-mono text-gray-500">{winPrefs.blurAmount}px</span>
+              </div>
+              <input type="range" min={0} max={32} step={2}
+                value={winPrefs.blurAmount}
+                onChange={e => setWin('blurAmount', Number(e.target.value))}
+                className="w-full h-1.5 accent-indigo-500 cursor-pointer" />
+            </div>
+          )}
+
+          {/* Glass opacity */}
+          {winPrefs.glassmorphism && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-800">Background opacity</p>
+                <span className="text-xs font-mono text-gray-500">{winPrefs.glassOpacity}%</span>
+              </div>
+              <input type="range" min={20} max={100} step={5}
+                value={winPrefs.glassOpacity}
+                onChange={e => setWin('glassOpacity', Number(e.target.value))}
+                className="w-full h-1.5 accent-indigo-500 cursor-pointer" />
+            </div>
+          )}
+
+          {/* Window border */}
+          <label className="flex items-center justify-between cursor-pointer">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Window border</p>
+              <p className="text-xs text-gray-500">Subtle border around windows</p>
+            </div>
+            <button onClick={() => setWin('showBorder', !winPrefs.showBorder)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${winPrefs.showBorder ? 'bg-indigo-500' : 'bg-gray-200'}`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${winPrefs.showBorder ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </label>
+
+          {/* Corner radius */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-800">Corner radius</p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {(['none', 'sm', 'md', 'lg', 'xl'] as CornerRadius[]).map(r => (
+                <button key={r} onClick={() => setWin('cornerRadius', r)}
+                  className={`py-1.5 text-xs font-medium rounded-md border transition-all capitalize ${winPrefs.cornerRadius === r ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                  {r === 'none' ? 'Square' : r.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Titlebar style */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-800">Titlebar style</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['glass', 'solid', 'minimal'] as TitlebarStyle[]).map(s => (
+                <button key={s} onClick={() => setWin('titlebarcStyle', s)}
+                  className={`py-1.5 text-xs font-medium rounded-md border transition-all capitalize ${winPrefs.titlebarcStyle === s ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Shadow level */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-800">Drop shadow</p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {(['none', 'sm', 'md', 'lg', 'xl'] as WindowPrefs['shadowLevel'][]).map(s => (
+                <button key={s} onClick={() => setWin('shadowLevel', s)}
+                  className={`py-1.5 text-xs font-medium rounded-md border transition-all ${winPrefs.shadowLevel === s ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                  {s.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Content padding */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-800">Content padding</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(['none', 'sm', 'md', 'lg'] as WindowPrefs['contentPadding'][]).map(p => (
+                <button key={p} onClick={() => setWin('contentPadding', p)}
+                  className={`py-1.5 text-xs font-medium rounded-md border transition-all capitalize ${winPrefs.contentPadding === p ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                  {p === 'none' ? 'None' : p === 'sm' ? 'Small' : p === 'md' ? 'Medium' : 'Large'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Animation speed */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-800">Animation speed</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(['none', 'fast', 'normal', 'slow'] as WindowPrefs['animationSpeed'][]).map(a => (
+                <button key={a} onClick={() => setWin('animationSpeed', a)}
+                  className={`py-1.5 text-xs font-medium rounded-md border transition-all capitalize ${winPrefs.animationSpeed === a ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                  {a.charAt(0).toUpperCase() + a.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
         </div>
       </section>
 
