@@ -1,10 +1,11 @@
 import { useSnapshot } from 'valtio';
 import { systemStore } from '../../core/system-store';
-import {
-  windowPrefsStore, resetWindowPrefs,
-  type CornerRadius, type TitlebarStyle, type WindowPrefs, type OsTheme,
-} from '../../core/window-prefs-store';
 import { useTheme } from '../../core/theme-store';
+import WallpaperUpload from '../../ui/WallpaperUpload';
+import {
+  resetWindowPrefs, windowPrefsStore,
+  type CornerRadius, type OsTheme, type TitlebarStyle, type WindowPrefs,
+} from '../../core/window-prefs-store';
 
 const OS_THEMES: { id: OsTheme; label: string; preview: string }[] = [
   { id: 'dark',     label: 'Dark',     preview: 'from-gray-950 to-gray-800' },
@@ -16,6 +17,16 @@ export default function SettingsApp() {
   const snap = useSnapshot(systemStore);
   const winPrefs = useSnapshot(windowPrefsStore);
   const t = useTheme();
+
+  const handleWallpaperSuccess = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      windowPrefsStore.wallpaperUrl = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearWallpaper = () => { windowPrefsStore.wallpaperUrl = ''; };
 
   const setWin = <K extends keyof WindowPrefs>(key: K, value: WindowPrefs[K]) => {
     windowPrefsStore[key] = value;
@@ -54,6 +65,24 @@ export default function SettingsApp() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* Wallpaper */}
+      <section className="space-y-3">
+        <h3 className={`text-sm font-semibold uppercase tracking-wide ${t.sectionLabel}`}>Desktop Wallpaper</h3>
+        <WallpaperUpload onUploadSuccess={handleWallpaperSuccess} onFileRemove={clearWallpaper} />
+        {winPrefs.wallpaperUrl && (
+          <div className="flex items-center gap-3">
+            <div className="w-20 h-14 rounded-lg border overflow-hidden flex-shrink-0"
+              style={{ backgroundImage: `url(${winPrefs.wallpaperUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+            <div className="flex-1">
+              <p className={`text-xs font-medium ${t.text}`}>Wallpaper active</p>
+              <button onClick={clearWallpaper} className="text-xs text-red-400 hover:text-red-300 underline underline-offset-2 mt-0.5">
+                Remove
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Behavior */}

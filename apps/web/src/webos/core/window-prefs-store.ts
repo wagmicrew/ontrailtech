@@ -25,6 +25,8 @@ export interface WindowPrefs {
   animationSpeed: 'none' | 'fast' | 'normal' | 'slow';
   /** OS-wide color theme */
   osTheme: OsTheme;
+  /** Custom desktop wallpaper as data URL (empty = use gradient) */
+  wallpaperUrl: string;
 }
 
 const STORAGE_KEY = 'ontrail-window-prefs';
@@ -48,6 +50,7 @@ const defaults: WindowPrefs = {
   contentPadding: 'md',
   animationSpeed: 'normal',
   osTheme: 'dark',
+  wallpaperUrl: '',
 };
 
 export const windowPrefsStore = proxy<WindowPrefs>({ ...defaults, ...loadSaved() });

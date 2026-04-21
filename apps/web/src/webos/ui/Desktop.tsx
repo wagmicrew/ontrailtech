@@ -11,7 +11,7 @@ interface ContextMenu {
 }
 
 export default function Desktop() {
-  const { osTheme } = useSnapshot(windowPrefsStore);
+  const { osTheme, wallpaperUrl } = useSnapshot(windowPrefsStore);
   const isLight = osTheme === 'light';
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
 
@@ -30,7 +30,9 @@ export default function Desktop() {
       className="absolute inset-0 bottom-10 overflow-hidden"
       onContextMenu={onContextMenu}
       onClick={() => setContextMenu(null)}
-      style={{ background: desktopGradient[osTheme] }}
+      style={wallpaperUrl
+        ? { backgroundImage: `url(${wallpaperUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        : { background: desktopGradient[osTheme] }}
     >
       {/* Subtle grid overlay */}
       <div
