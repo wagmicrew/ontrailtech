@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { adminFetch, API_BASE } from '../../core/admin-fetch';
+import { useTheme } from '../../core/theme-store';
 
 interface FitnessProvider {
   id: string; name: string; icon: string; color: string; docUrl: string;
@@ -49,6 +50,7 @@ const COLOR_MAP: Record<string, { bg: string; border: string; badge: string; rin
 };
 
 export default function FitnessApp() {
+  const t = useTheme();
   const [configs, setConfigs] = useState<Record<string, Record<string, string>>>({});
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
@@ -74,10 +76,10 @@ export default function FitnessApp() {
   };
 
   return (
-    <div className="p-6 space-y-6 bg-white min-h-full">
+    <div className={`p-6 space-y-6 min-h-full ${t.bg}`}>
       <div>
-        <h2 className="text-2xl font-semibold text-gray-900">Fitness Integrations</h2>
-        <p className="text-sm text-gray-500 mt-1">Connect fitness apps — steps and activities earn reputation points</p>
+        <h2 className={`text-2xl font-semibold ${t.heading}`}>Fitness Integrations</h2>
+        <p className={`text-sm mt-1 ${t.textMuted}`}>Connect fitness apps — steps and activities earn reputation points</p>
       </div>
 
       {stepsStats && (
@@ -88,9 +90,9 @@ export default function FitnessApp() {
             { label: 'Rep points today', value: stepsStats.rep_today?.toFixed(0) ?? '—' },
             { label: 'Active connections', value: stepsStats.active_connections ?? '—' },
           ].map(({ label, value }) => (
-            <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+            <div key={label} className={`border rounded-xl p-4 ${t.bgCard} ${t.border}`}>
+              <p className={`text-xs ${t.textMuted}`}>{label}</p>
+              <p className={`text-2xl font-bold mt-1 ${t.heading}`}>{value}</p>
             </div>
           ))}
         </div>
@@ -102,13 +104,13 @@ export default function FitnessApp() {
           const cfg = configs[provider.id] || {};
           const isEnabled = enabled[provider.id] ?? false;
           return (
-            <div key={provider.id} className={`bg-white border rounded-2xl shadow-sm overflow-hidden ${isEnabled ? c.border : 'border-gray-100'}`}>
-              <div className={`px-5 py-4 flex items-center justify-between ${isEnabled ? c.bg : 'bg-gray-50'} border-b ${isEnabled ? c.border : 'border-gray-100'}`}>
+            <div key={provider.id} className={`border rounded-2xl shadow-sm overflow-hidden ${isEnabled ? c.border : t.border}`}>
+              <div className={`px-5 py-4 flex items-center justify-between border-b ${isEnabled ? `${c.bg} ${c.border}` : `${t.bgCard} ${t.border}`}`}>
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{provider.icon}</span>
                   <div>
-                    <h3 className="font-semibold text-gray-900 text-sm">{provider.name}</h3>
-                    {provider.docUrl && <a href={provider.docUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-gray-600">View docs ↗</a>}
+                    <h3 className={`font-semibold text-sm ${t.heading}`}>{provider.name}</h3>
+                    {provider.docUrl && <a href={provider.docUrl} target="_blank" rel="noopener noreferrer" className={`text-xs ${t.textMuted} hover:underline`}>View docs ↗</a>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -124,9 +126,9 @@ export default function FitnessApp() {
                   const secretKey = `${provider.id}.${field.key}`;
                   return (
                     <div key={field.key}>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                      <label className={`block text-xs font-medium mb-1.5 ${t.textMuted}`}>
                         {field.label}
-                        {field.hint && <span className="ml-1.5 text-gray-400 font-normal">— {field.hint}</span>}
+                        {field.hint && <span className={`ml-1.5 font-normal ${t.textMuted} opacity-70`}>— {field.hint}</span>}
                       </label>
                       <div className="relative">
                         <input
@@ -134,7 +136,7 @@ export default function FitnessApp() {
                           value={cfg[field.key] || ''}
                           onChange={e => setField(provider.id, field.key, e.target.value)}
                           placeholder={field.sensitive ? '••••••••' : undefined}
-                          className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${field.sensitive ? 'pr-10' : ''} focus:outline-none focus:ring-2 ${c.ring}`}
+                          className={`w-full border rounded-lg px-3 py-2 text-sm ${field.sensitive ? 'pr-10' : ''} focus:outline-none focus:ring-2 ${c.ring} ${t.inputBg} ${t.inputBorder} ${t.inputText}`}
                         />
                         {field.sensitive && (
                           <button type="button" onClick={() => setShowSecret(s => ({ ...s, [secretKey]: !s[secretKey] }))}
@@ -151,10 +153,10 @@ export default function FitnessApp() {
                     </div>
                   );
                 })}
-                <div className="mt-2 pt-3 border-t border-gray-100">
-                  <p className="text-xs text-gray-500 mb-1">Webhook / Callback URL</p>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                    <code className="text-xs text-gray-600 font-mono flex-1 truncate">{API_BASE}/fitness/webhook/{provider.id}</code>
+                <div className={`mt-2 pt-3 border-t ${t.border}`}>
+                  <p className={`text-xs mb-1 ${t.textMuted}`}>Webhook / Callback URL</p>
+                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${t.bgCard} border ${t.border}`}>
+                    <code className={`text-xs font-mono flex-1 truncate ${t.textMuted}`}>{API_BASE}/fitness/webhook/{provider.id}</code>
                     <button onClick={() => navigator.clipboard.writeText(`${API_BASE}/fitness/webhook/${provider.id}`)} className="text-gray-400 hover:text-gray-600 flex-shrink-0" title="Copy">
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" /></svg>
                     </button>

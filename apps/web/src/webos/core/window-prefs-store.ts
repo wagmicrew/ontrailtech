@@ -2,6 +2,7 @@ import { proxy, subscribe } from 'valtio';
 
 export type TitlebarStyle = 'glass' | 'solid' | 'minimal';
 export type CornerRadius = 'none' | 'sm' | 'md' | 'lg' | 'xl';
+export type OsTheme = 'dark' | 'light' | 'midnight';
 
 export interface WindowPrefs {
   /** Enable glassmorphism (backdrop-blur + translucent bg) */
@@ -22,6 +23,8 @@ export interface WindowPrefs {
   contentPadding: 'none' | 'sm' | 'md' | 'lg';
   /** Window animation speed: 'fast' | 'normal' | 'slow' | 'none' */
   animationSpeed: 'none' | 'fast' | 'normal' | 'slow';
+  /** OS-wide color theme */
+  osTheme: OsTheme;
 }
 
 const STORAGE_KEY = 'ontrail-window-prefs';
@@ -44,6 +47,7 @@ const defaults: WindowPrefs = {
   shadowLevel: 'xl',
   contentPadding: 'md',
   animationSpeed: 'normal',
+  osTheme: 'dark',
 };
 
 export const windowPrefsStore = proxy<WindowPrefs>({ ...defaults, ...loadSaved() });

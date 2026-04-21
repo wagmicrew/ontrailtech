@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { adminFetch } from '../../core/admin-fetch';
+import { useTheme } from '../../core/theme-store';
 
 const DB_TABLES = [
   'users', 'wallets', 'auth_nonces', 'friends', 'grid_cells', 'poi_slots', 'pois',
@@ -11,15 +12,16 @@ interface TableRow { [key: string]: any; }
 const PAGE_SIZE = 30;
 
 function formatCell(val: any) {
-  if (val === null || val === undefined) return <span className="text-gray-300 italic text-xs">null</span>;
-  if (typeof val === 'boolean') return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${val ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{String(val)}</span>;
-  if (typeof val === 'object') { const s = JSON.stringify(val); return <span className="text-purple-600 font-mono text-xs">{s.slice(0, 60)}{s.length > 60 ? '…' : ''}</span>; }
+  if (val === null || val === undefined) return <span className="text-gray-400 italic text-xs">null</span>;
+  if (typeof val === 'boolean') return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${val ? 'bg-green-500/15 text-green-500' : 'bg-red-500/15 text-red-500'}`}>{String(val)}</span>;
+  if (typeof val === 'object') { const s = JSON.stringify(val); return <span className="text-purple-400 font-mono text-xs">{s.slice(0, 60)}{s.length > 60 ? '\u2026' : ''}</span>; }
   const str = String(val);
-  if (str.length > 50) return <span className="text-gray-600 font-mono text-xs" title={str}>{str.slice(0, 50)}…</span>;
-  return <span className="text-gray-700 font-mono text-xs">{str}</span>;
+  if (str.length > 50) return <span className="font-mono text-xs opacity-70" title={str}>{str.slice(0, 50)}\u2026</span>;
+  return <span className="font-mono text-xs opacity-90">{str}</span>;
 }
 
 export default function DatabaseApp() {
+  const t = useTheme();
   const [mode, setMode] = useState<'browse' | 'sql'>('browse');
   const [table, setTable] = useState('users');
   const [rows, setRows] = useState<TableRow[]>([]);
@@ -61,16 +63,16 @@ export default function DatabaseApp() {
   };
 
   return (
-    <div className="p-6 space-y-6 bg-white min-h-full">
+    <div className={`p-6 space-y-6 min-h-full ${t.bg}`}>
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Database</h2>
-          <p className="text-sm text-gray-500 mt-1">Browse tables and run SQL queries</p>
+          <h2 className={`text-2xl font-semibold ${t.heading}`}>Database</h2>
+          <p className={`text-sm mt-1 ${t.textMuted}`}>Browse tables and run SQL queries</p>
         </div>
         <div className="flex gap-2">
           {(['browse', 'sql'] as const).map(m => (
             <button key={m} onClick={() => setMode(m)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === m ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === m ? 'bg-green-500 text-white' : `${t.bgCard} ${t.textMuted} ${t.bgHover} border ${t.border}`}`}>
               {m === 'browse' ? '🗃 Browse' : '⌨ SQL'}
             </button>
           ))}
@@ -86,10 +88,10 @@ export default function DatabaseApp() {
       {mode === 'browse' && (
         <div className="space-y-4">
           <div className="flex gap-3 items-center">
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 flex-1 max-w-xs">
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 flex-1 max-w-xs border ${t.border} ${t.bgCard}`}>
               <select value={table} onChange={e => { setTable(e.target.value); setPage(0); }}
-                className="text-sm text-gray-700 bg-transparent border-none outline-none flex-1">
-                {DB_TABLES.map(t => <option key={t} value={t}>{t}</option>)}
+                className={`text-sm bg-transparent border-none outline-none flex-1 ${t.text}`}>
+                {DB_TABLES.map(tb => <option key={tb} value={tb}>{tb}</option>)}
               </select>
             </div>
             <button onClick={loadTable}
@@ -100,29 +102,29 @@ export default function DatabaseApp() {
           </div>
 
           {rows.length > 0 ? (
-            <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
+            <div className={`border rounded-xl shadow-sm overflow-hidden ${t.border}`}>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-max">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      {columns.map(col => <th key={col} className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{col}</th>)}
+                    <tr className={`border-b ${t.bgCard} ${t.border}`}>
+                      {columns.map(col => <th key={col} className={`text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${t.sectionLabel}`}>{col}</th>)}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody className={`divide-y ${t.divider}`}>
                     {rows.map((row, rowIdx) => (
-                      <tr key={rowIdx} className="hover:bg-blue-50/30 group transition-colors">
+                      <tr key={rowIdx} className={`group transition-colors ${t.tableHover}`}>
                         {columns.map(col => (
                           <td key={col} className="px-3 py-2 relative">
                             {editingCell?.rowIdx === rowIdx && editingCell.col === col ? (
                               <div className="flex gap-1">
                                 <input value={cellValue} onChange={e => setCellValue(e.target.value)} autoFocus
                                   onKeyDown={e => { if (e.key === 'Enter') saveCell(rowIdx); if (e.key === 'Escape') setEditingCell(null); }}
-                                  className="border border-blue-400 rounded px-2 py-1 text-xs font-mono w-32 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                                  className={`border border-blue-400 rounded px-2 py-1 text-xs font-mono w-32 focus:outline-none focus:ring-1 focus:ring-blue-400 ${t.inputBg} ${t.inputText}`} />
                                 <button onClick={() => saveCell(rowIdx)} className="px-1.5 py-1 bg-blue-500 text-white rounded text-xs">✓</button>
-                                <button onClick={() => setEditingCell(null)} className="px-1.5 py-1 bg-gray-200 rounded text-xs">✕</button>
+                                <button onClick={() => setEditingCell(null)} className={`px-1.5 py-1 rounded text-xs ${t.bgCard} ${t.text}`}>✕</button>
                               </div>
                             ) : (
-                              <button className="block text-left group-hover:text-blue-700 transition-colors w-full"
+                              <button className={`block text-left w-full hover:text-blue-400 transition-colors`}
                                 onDoubleClick={() => { setEditingCell({ rowIdx, col }); setCellValue(typeof row[col] === 'object' ? JSON.stringify(row[col]) : String(row[col] ?? '')); }}>
                                 {formatCell(row[col])}
                               </button>
@@ -134,23 +136,23 @@ export default function DatabaseApp() {
                   </tbody>
                 </table>
               </div>
-              <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-                <span className="text-xs text-gray-400">{rows.length} rows · double-click a cell to edit</span>
+              <div className={`px-4 py-3 border-t flex items-center justify-between ${t.border} ${t.bgCard}`}>
+                <span className={`text-xs ${t.textMuted}`}>{rows.length} rows · double-click a cell to edit</span>
                 <div className="flex gap-2">
-                  <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className="px-3 py-1.5 rounded-lg text-xs bg-white border border-gray-200 disabled:opacity-40 hover:bg-gray-50">← Prev</button>
-                  <button disabled={rows.length < PAGE_SIZE} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 rounded-lg text-xs bg-white border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Next →</button>
+                  <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className={`px-3 py-1.5 rounded-lg text-xs border disabled:opacity-40 ${t.bgCard} ${t.border} ${t.text} ${t.bgHover}`}>← Prev</button>
+                  <button disabled={rows.length < PAGE_SIZE} onClick={() => setPage(p => p + 1)} className={`px-3 py-1.5 rounded-lg text-xs border disabled:opacity-40 ${t.bgCard} ${t.border} ${t.text} ${t.bgHover}`}>Next →</button>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="border border-dashed border-gray-200 rounded-xl py-16 text-center text-gray-400">Select a table and click Load</div>
+            <div className={`border border-dashed rounded-xl py-16 text-center ${t.border} ${t.textMuted}`}>Select a table and click Load</div>
           )}
         </div>
       )}
 
       {mode === 'sql' && (
         <div className="space-y-4">
-          <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
+          <div className={`border rounded-xl shadow-sm overflow-hidden ${t.border}`}>
             <div className="px-4 py-3 bg-gray-900 rounded-t-xl">
               <div className="flex items-center gap-1.5 mb-3">
                 <div className="w-3 h-3 rounded-full bg-red-400/60" /><div className="w-3 h-3 rounded-full bg-amber-400/60" /><div className="w-3 h-3 rounded-full bg-green-400/60" />
@@ -160,8 +162,8 @@ export default function DatabaseApp() {
                 placeholder="SELECT * FROM users WHERE reputation_score > 100 LIMIT 50;"
                 onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runSQL(); } }} />
             </div>
-            <div className="px-4 py-3 flex items-center justify-between border-t border-gray-100 bg-gray-50">
-              <span className="text-xs text-gray-400">Ctrl+Enter to run</span>
+            <div className={`px-4 py-3 flex items-center justify-between border-t ${t.border} ${t.bgCard}`}>
+              <span className={`text-xs ${t.textMuted}`}>Ctrl+Enter to run</span>
               <button onClick={runSQL} disabled={loading || !sqlQuery.trim()}
                 className="px-5 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
                 {loading && <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
@@ -171,24 +173,24 @@ export default function DatabaseApp() {
           </div>
 
           {sqlResult && (
-            <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <span className="text-sm font-medium text-gray-700">
+            <div className={`border rounded-xl shadow-sm overflow-hidden ${t.border}`}>
+              <div className={`px-4 py-3 border-b ${t.border} ${t.bgCard}`}>
+                <span className={`text-sm font-medium ${t.text}`}>
                   {sqlResult.affected !== undefined ? `${sqlResult.affected} rows affected` : `${sqlResult.rows?.length ?? 0} rows returned`}
                 </span>
               </div>
               {sqlResult.rows?.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm min-w-max">
-                    <thead><tr className="bg-gray-50 border-b border-gray-100">{sqlResult.columns.map(col => <th key={col} className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{col}</th>)}</tr></thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <thead><tr className={`border-b ${t.bgCard} ${t.border}`}>{sqlResult.columns.map(col => <th key={col} className={`text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${t.sectionLabel}`}>{col}</th>)}</tr></thead>
+                    <tbody className={`divide-y ${t.divider}`}>
                       {sqlResult.rows.map((row, i) => (
-                        <tr key={i} className="hover:bg-gray-50/60">{row.map((cell, j) => <td key={j} className="px-3 py-2">{formatCell(cell)}</td>)}</tr>
+                        <tr key={i} className={t.tableHover}>{row.map((cell, j) => <td key={j} className="px-3 py-2">{formatCell(cell)}</td>)}</tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              ) : <div className="px-4 py-6 text-center text-sm text-gray-400">Query completed with no rows</div>}
+              ) : <div className={`px-4 py-6 text-center text-sm ${t.textMuted}`}>Query completed with no rows</div>}
             </div>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTheme } from '../../webos/core/theme-store';
 
 const API = import.meta.env.VITE_API_URL || 'https://api.ontrail.tech';
 
@@ -52,6 +53,7 @@ interface ExpoSessions {
 }
 
 export default function ExpoGoPage() {
+  const t = useTheme();
   const [status, setStatus] = useState<ExpoStatus | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [sessions, setSessions] = useState<ExpoSessions | null>(null);
@@ -235,9 +237,9 @@ export default function ExpoGoPage() {
   };
 
   const statusColor = (s: string) => {
-    if (s === 'running') return 'bg-green-100 text-green-700';
-    if (s === 'errored') return 'bg-red-100 text-red-700';
-    return 'bg-gray-100 text-gray-600';
+    if (s === 'running') return t.badgeSuccess;
+    if (s === 'errored') return t.badgeDanger;
+    return t.badge;
   };
 
   const portHealthTone = (health: ExpoPortHealth | null) => {
@@ -252,11 +254,11 @@ export default function ExpoGoPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Expo Go</h2>
-          <p className="text-sm text-gray-500 mt-1">Monitor and manage the Expo Go development server</p>
+          <h2 className={`text-2xl font-semibold ${t.heading}`}>Expo Go</h2>
+          <p className={`text-sm mt-1 ${t.textMuted}`}>Monitor and manage the Expo Go development server</p>
         </div>
         <button onClick={loadAll}
-          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${t.bgCard} ${t.bgHover} ${t.text} border ${t.border}`}>
           {loading && <Spinner />}
           Refresh
         </button>
@@ -277,18 +279,18 @@ export default function ExpoGoPage() {
       {status && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Server Status Card */}
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Server Status</h3>
+          <div className={`border rounded-2xl shadow-sm p-5 ${t.bgCard} ${t.border}`}>
+            <h3 className={`text-xs font-semibold uppercase tracking-wide mb-3 ${t.sectionLabel}`}>Server Status</h3>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Status</span>
+                <span className={`text-sm ${t.textMuted}`}>Status</span>
                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusColor(status.status)}`}>
                   {status.status}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Port</span>
-                <span className="text-sm font-mono text-gray-800">{status.port}</span>
+                <span className={`text-sm ${t.textMuted}`}>Port</span>
+                <span className={`text-sm font-mono ${t.text}`}>{status.port}</span>
               </div>
               <div className={`rounded-lg border px-3 py-2 text-xs ${portHealthTone(portHealth)}`}>
                 <div className="font-medium uppercase tracking-wide">Port Health</div>
@@ -298,30 +300,30 @@ export default function ExpoGoPage() {
                 )}
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Mode</span>
-                <span className="text-sm font-mono text-gray-800">{status.mode}</span>
+                <span className={`text-sm ${t.textMuted}`}>Mode</span>
+                <span className={`text-sm font-mono ${t.text}`}>{status.mode}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Uptime</span>
-                <span className="text-sm font-mono text-gray-800">{formatUptime(status.uptime)}</span>
+                <span className={`text-sm ${t.textMuted}`}>Uptime</span>
+                <span className={`text-sm font-mono ${t.text}`}>{formatUptime(status.uptime)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Memory</span>
-                <span className="text-sm font-mono text-gray-800">{status.memory_mb.toFixed(1)} MB</span>
+                <span className={`text-sm ${t.textMuted}`}>Memory</span>
+                <span className={`text-sm font-mono ${t.text}`}>{status.memory_mb.toFixed(1)} MB</span>
               </div>
               {status.pid && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">PID</span>
-                  <span className="text-sm font-mono text-gray-800">{status.pid}</span>
+                  <span className={`text-sm ${t.textMuted}`}>PID</span>
+                  <span className={`text-sm font-mono ${t.text}`}>{status.pid}</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Restart Card */}
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Server Control</h3>
-            <p className="text-sm text-gray-500 mb-4">Start, stop, restart, or prewarm the Expo Go bundler.</p>
+          <div className={`border rounded-2xl shadow-sm p-5 ${t.bgCard} ${t.border}`}>
+            <h3 className={`text-xs font-semibold uppercase tracking-wide mb-3 ${t.sectionLabel}`}>Server Control</h3>
+            <p className={`text-sm mb-4 ${t.textMuted}`}>Start, stop, restart, or prewarm the Expo Go bundler.</p>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => runControlAction('start')} disabled={controlBusy !== null}
                 className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
@@ -357,18 +359,18 @@ export default function ExpoGoPage() {
           </div>
 
           {/* Port Config Card */}
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Port Configuration</h3>
+          <div className={`border rounded-2xl shadow-sm p-5 ${t.bgCard} ${t.border}`}>
+            <h3 className={`text-xs font-semibold uppercase tracking-wide mb-3 ${t.sectionLabel}`}>Port Configuration</h3>
             <form onSubmit={handlePortSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Port (1024–65535)</label>
+                <label className={`block text-xs font-medium mb-1.5 ${t.textMuted}`}>Port (1024–65535)</label>
                 <input
                   type="number"
                   min={1024}
                   max={65535}
                   value={portValue}
                   onChange={e => { setPortValue(e.target.value); setPortError(''); setPortMsg(''); setPortHealth(null); }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400"
+                  className={`w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 ${t.inputBorder} ${t.inputBg} ${t.inputText}`}
                 />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -391,47 +393,47 @@ export default function ExpoGoPage() {
               )}
               {portError && <p className="text-sm text-red-600">{portError}</p>}
               {portMsg && <p className="text-sm text-green-600">{portMsg}</p>}
-              <p className="text-xs text-gray-400">You can also check a specific local port with <span className="font-mono">npm run port:check --workspace=apps/mobile -- --port 8082</span>.</p>
+              <p className={`text-xs mt-1 ${t.textMuted}`}>You can also check a specific local port with <span className="font-mono">npm run port:check --workspace=apps/mobile -- --port 8082</span>.</p>
             </form>
           </div>
 
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 space-y-4">
+          <div className={`border rounded-2xl shadow-sm p-5 space-y-4 ${t.bgCard} ${t.border}`}>
             <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Launch & Mode</h3>
+              <h3 className={`text-xs font-semibold uppercase tracking-wide mb-3 ${t.sectionLabel}`}>Launch &amp; Mode</h3>
               <div className="space-y-2 text-sm">
                 <div>
-                  <span className="block text-gray-500">Expo Go deep link</span>
-                  <a href={status.web_url} target="_blank" rel="noopener noreferrer" className="font-mono text-green-600 break-all hover:text-green-700">
+                  <span className={`block ${t.textMuted}`}>Expo Go deep link</span>
+                  <a href={status.web_url} target="_blank" rel="noopener noreferrer" className="font-mono text-green-500 break-all hover:text-green-400">
                     {status.deep_link}
                   </a>
                 </div>
                 <div>
-                  <span className="block text-gray-500">Web proxy</span>
-                  <a href={status.web_url} target="_blank" rel="noopener noreferrer" className="font-mono text-gray-800 break-all hover:text-gray-900">
+                  <span className={`block ${t.textMuted}`}>Web proxy</span>
+                  <a href={status.web_url} target="_blank" rel="noopener noreferrer" className={`font-mono break-all hover:underline ${t.text}`}>
                     {status.web_url}
                   </a>
                 </div>
                 <div>
-                  <span className="block text-gray-500">Cloudflare tunnel</span>
-                  <span className="font-mono text-xs text-gray-700 break-all">
+                  <span className={`block ${t.textMuted}`}>Cloudflare tunnel</span>
+                  <span className={`font-mono text-xs break-all ${t.text}`}>
                     {status.cloudflare_url || `status: ${status.cloudflare_status}`}
                   </span>
                 </div>
               </div>
             </div>
-            <form onSubmit={handleModeSubmit} className="space-y-3 border-t border-gray-100 pt-4">
+            <form onSubmit={handleModeSubmit} className={`space-y-3 border-t pt-4 ${t.border}`}>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Connection Mode</label>
+                <label className={`block text-xs font-medium mb-1.5 ${t.textMuted}`}>Connection Mode</label>
                 <select
                   value={modeValue}
                   onChange={e => { setModeValue(e.target.value as ExpoStatus['mode']); setModeError(''); setModeMsg(''); }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400"
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 ${t.inputBorder} ${t.inputBg} ${t.inputText}`}
                 >
                   <option value="tunnel">Tunnel</option>
                   <option value="lan">LAN</option>
                   <option value="local">Localhost</option>
                 </select>
-                <p className="text-xs text-gray-400 mt-1">Use tunnel for remote Expo Go access, LAN for same-network devices, and localhost for server-local debugging.</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Use tunnel for remote Expo Go access, LAN for same-network devices, and localhost for server-local debugging.</p>
               </div>
               <button type="submit" disabled={savingMode}
                 className="px-5 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
@@ -441,10 +443,10 @@ export default function ExpoGoPage() {
               {modeError && <p className="text-sm text-red-600">{modeError}</p>}
               {modeMsg && <p className="text-sm text-green-600">{modeMsg}</p>}
             </form>
-            <div className="border-t border-gray-100 pt-4 space-y-3">
+            <div className={`border-t pt-4 space-y-3 ${t.border}`}>
               <div>
-                <p className="text-xs font-medium text-gray-600 mb-1.5">Cloudflare Quick Tunnel</p>
-                <p className="text-xs text-gray-400">Start or stop a temporary Cloudflare tunnel for remote Expo debugging.</p>
+                <p className={`text-xs font-medium mb-1.5 ${t.textMuted}`}>Cloudflare Quick Tunnel</p>
+                <p className={`text-xs ${t.textMuted} opacity-70`}>Start or stop a temporary Cloudflare tunnel for remote Expo debugging.</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => handleCloudflareAction('start')} disabled={controlBusy !== null}
@@ -465,15 +467,15 @@ export default function ExpoGoPage() {
 
       {/* Sessions */}
       {sessions && (
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Active Sessions</h3>
-          <p className="text-3xl font-bold text-gray-900">{sessions.count}</p>
-          <p className="text-sm text-gray-500 mt-1">connected Expo Go clients</p>
+        <div className={`border rounded-2xl shadow-sm p-5 ${t.bgCard} ${t.border}`}>
+          <h3 className={`text-xs font-semibold uppercase tracking-wide mb-2 ${t.sectionLabel}`}>Active Sessions</h3>
+          <p className={`text-3xl font-bold ${t.heading}`}>{sessions.count}</p>
+          <p className={`text-sm mt-1 ${t.textMuted}`}>connected Expo Go clients</p>
           {sessions.sessions.length > 0 && (
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr className={`border-b text-left text-xs uppercase tracking-wide ${t.border} ${t.sectionLabel}`}>
                     <th className="py-2 pr-4">State</th>
                     <th className="py-2 pr-4">Local</th>
                     <th className="py-2">Peer</th>
@@ -481,10 +483,10 @@ export default function ExpoGoPage() {
                 </thead>
                 <tbody>
                   {sessions.sessions.map((session, index) => (
-                    <tr key={`${session.peer}-${index}`} className="border-b border-gray-50 last:border-b-0">
-                      <td className="py-2 pr-4 font-mono text-xs text-gray-700">{session.state}</td>
-                      <td className="py-2 pr-4 font-mono text-xs text-gray-500">{session.local}</td>
-                      <td className="py-2 font-mono text-xs text-gray-500">{session.peer}</td>
+                    <tr key={`${session.peer}-${index}`} className={`border-b last:border-b-0 ${t.border} ${t.tableHover}`}>
+                      <td className={`py-2 pr-4 font-mono text-xs ${t.text}`}>{session.state}</td>
+                      <td className={`py-2 pr-4 font-mono text-xs ${t.textMuted}`}>{session.local}</td>
+                      <td className={`py-2 font-mono text-xs ${t.textMuted}`}>{session.peer}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -495,10 +497,10 @@ export default function ExpoGoPage() {
       )}
 
       {/* Logs */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Process Logs</h3>
-          <span className="text-xs text-gray-400">Last {logs.length} lines</span>
+      <div className={`border rounded-2xl shadow-sm overflow-hidden ${t.border}`}>
+        <div className={`px-5 py-3 border-b flex items-center justify-between ${t.border} ${t.bgCard}`}>
+          <h3 className={`text-xs font-semibold uppercase tracking-wide ${t.sectionLabel}`}>Process Logs</h3>
+          <span className={`text-xs ${t.textMuted}`}>Last {logs.length} lines</span>
         </div>
         {logs.length > 0 ? (
           <div className="bg-gray-900 p-4 max-h-80 overflow-y-auto font-mono text-xs leading-5">
@@ -507,7 +509,7 @@ export default function ExpoGoPage() {
             ))}
           </div>
         ) : (
-          <div className="py-12 text-center text-gray-400 text-sm">No log lines available</div>
+          <div className={`py-12 text-center text-sm ${t.textMuted}`}>No log lines available</div>
         )}
       </div>
     </div>

@@ -1,6 +1,8 @@
 import { useSnapshot } from 'valtio';
 import { wmStore, focusWindow, openWindow } from '../core/window-manager';
 import { systemStore } from '../core/system-store';
+import { windowPrefsStore } from '../core/window-prefs-store';
+import { taskbarClass, taskbarText } from '../core/theme-store';
 import { useState } from 'react';
 import TaskbarClock from './TaskbarClock';
 import NotificationPopup from './NotificationPopup';
@@ -8,10 +10,12 @@ import NotificationPopup from './NotificationPopup';
 export default function Taskbar() {
   const wmSnap = useSnapshot(wmStore);
   const sysSnap = useSnapshot(systemStore);
+  const { osTheme } = useSnapshot(windowPrefsStore);
   const [showNotifs, setShowNotifs] = useState(false);
+  const isLight = osTheme === 'light';
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-10 bg-gray-900/90 backdrop-blur border-t border-white/10 flex items-center px-2 gap-1 z-[8000]">
+    <div className={`fixed bottom-0 left-0 right-0 h-10 flex items-center px-2 gap-1 z-[8000] ${taskbarClass[osTheme]}`}>
       {/* Start / Home button */}
       <button
         className="flex-shrink-0 w-8 h-8 rounded-lg bg-green-500 hover:bg-green-400 transition-colors flex items-center justify-center"
@@ -23,7 +27,7 @@ export default function Taskbar() {
         </svg>
       </button>
 
-      <div className="w-px h-5 bg-white/10 mx-1 flex-shrink-0" />
+      <div className={`w-px h-5 mx-1 flex-shrink-0 ${isLight ? 'bg-gray-300' : 'bg-white/10'}`} />
 
       {/* Running app buttons */}
       <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-none">
@@ -38,8 +42,12 @@ export default function Taskbar() {
               }}
               className={`flex items-center gap-1.5 px-2.5 h-7 rounded-md text-xs font-medium transition-colors max-w-[140px] ${
                 isActive
-                  ? 'bg-white/20 text-white border border-white/20'
-                  : 'bg-white/8 text-white/50 border border-white/10 hover:bg-white/15'
+                  ? isLight
+                    ? 'bg-black/10 text-gray-900 border border-black/15'
+                    : 'bg-white/20 text-white border border-white/20'
+                  : isLight
+                    ? 'bg-black/5 text-gray-500 border border-black/8 hover:bg-black/10'
+                    : 'bg-white/8 text-white/50 border border-white/10 hover:bg-white/15'
               }`}
             >
               <span className="flex-shrink-0">{win.icon}</span>
@@ -57,9 +65,9 @@ export default function Taskbar() {
       {/* Notifications bell */}
       <button
         onClick={() => setShowNotifs(v => !v)}
-        className="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
+        className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${taskbarText[osTheme]}`}
       >
-        <svg className="w-4 h-4 text-white/70" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
         </svg>
         {sysSnap.notifications.length > 0 && (
@@ -73,7 +81,7 @@ export default function Taskbar() {
       <a
         href="/"
         title="Exit to site"
-        className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors text-white/60 hover:text-white"
+        className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${taskbarText[osTheme]}`}
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />

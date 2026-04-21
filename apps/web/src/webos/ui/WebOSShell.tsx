@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useSnapshot } from 'valtio';
 import { systemStore, markBootComplete } from '../core/system-store';
+import { windowPrefsStore } from '../core/window-prefs-store';
 import { connectKernel } from '../core/kernel-client';
 import BootScreen from './BootScreen';
 import Desktop from './Desktop';
@@ -10,6 +11,7 @@ import WindowManager from './WindowManager';
 
 export default function WebOSShell() {
   const snap = useSnapshot(systemStore);
+  const { osTheme } = useSnapshot(windowPrefsStore);
 
   useEffect(() => {
     connectKernel();
@@ -20,7 +22,7 @@ export default function WebOSShell() {
   };
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-gray-950">
+    <div className={`fixed inset-0 overflow-hidden ${osTheme === 'light' ? 'bg-slate-100' : osTheme === 'midnight' ? 'bg-indigo-950' : 'bg-gray-950'}`}>
       <AnimatePresence>
         {!snap.bootComplete && !snap.sessionBooted && (
           <BootScreen key="boot" onComplete={handleBootComplete} />

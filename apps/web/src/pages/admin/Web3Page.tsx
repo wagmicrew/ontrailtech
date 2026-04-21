@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTheme } from '../../webos/core/theme-store';
 
 const API = import.meta.env.VITE_API_URL || 'https://api.ontrail.tech';
 
@@ -27,20 +28,21 @@ const SECTION_LABELS: Record<Section, { label: string; icon: string; desc: strin
 };
 
 export default function Web3Page() {
+  const t = useTheme();
   const [section, setSection] = useState<Section>('mint');
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-gray-900">Web3</h2>
-        <p className="text-sm text-gray-500 mt-1">Token minting, smart contracts, and chain configuration</p>
+        <h2 className={`text-2xl font-semibold ${t.heading}`}>Web3</h2>
+        <p className={`text-sm mt-1 ${t.textMuted}`}>Token minting, smart contracts, and chain configuration</p>
       </div>
 
       {/* Section tabs */}
       <div className="flex gap-2 flex-wrap">
         {SECTIONS.map(s => (
           <button key={s} onClick={() => setSection(s)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-all ${section === s ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:text-green-700'}`}>
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-all ${section === s ? 'bg-green-500 text-white border-green-500 shadow-sm' : `${t.bgCard} ${t.border} ${t.textMuted} hover:border-green-300 hover:text-green-500`}`}>
             <span>{SECTION_LABELS[s].icon}</span>
             {SECTION_LABELS[s].label}
           </button>
@@ -125,6 +127,7 @@ function MintSection() {
 
 /* ── Contract Publisher ── */
 function ContractsSection() {
+  const t = useTheme();
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [abi, setAbi] = useState('');
@@ -189,18 +192,18 @@ function ContractsSection() {
         <Card title="Registered Contracts" icon="📋">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="border-b border-gray-100">
+              <thead><tr className={`border-b ${t.border}`}>
                 {['Name', 'Address', 'Chain', 'Registered'].map(h => (
-                  <th key={h} className="text-left pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide pr-4">{h}</th>
+                  <th key={h} className={`text-left pb-2 text-xs font-semibold uppercase tracking-wide pr-4 ${t.sectionLabel}`}>{h}</th>
                 ))}
               </tr></thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className={`divide-y ${t.divider}`}>
                 {contracts.map((c: any) => (
-                  <tr key={c.id} className="hover:bg-gray-50/60">
-                    <td className="py-2.5 pr-4 font-medium text-gray-800 text-sm">{c.name}</td>
-                    <td className="py-2.5 pr-4 font-mono text-xs text-gray-500">{c.address?.slice(0, 10)}…{c.address?.slice(-6)}</td>
-                    <td className="py-2.5 pr-4 text-gray-600 text-xs">{c.chain_id}</td>
-                    <td className="py-2.5 text-gray-400 text-xs">{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</td>
+                  <tr key={c.id} className={t.tableHover}>
+                    <td className={`py-2.5 pr-4 font-medium text-sm ${t.text}`}>{c.name}</td>
+                    <td className={`py-2.5 pr-4 font-mono text-xs ${t.textMuted}`}>{c.address?.slice(0, 10)}…{c.address?.slice(-6)}</td>
+                    <td className={`py-2.5 pr-4 text-xs ${t.textMuted}`}>{c.chain_id}</td>
+                    <td className={`py-2.5 text-xs ${t.textMuted}`}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -214,6 +217,7 @@ function ContractsSection() {
 
 /* ── Chain Setup ── */
 function ChainsSection() {
+  const t = useTheme();
   const [chains, setChains] = useState<any[]>([]);
   const [form, setForm] = useState({ name: '', chain_id: '', rpc_url: '', explorer_url: '', native_currency: 'ETH', is_testnet: false });
   const [error, setError] = useState('');
@@ -266,15 +270,15 @@ function ChainsSection() {
         <Card title="Configured Chains" icon="📡">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {chains.map((c: any) => (
-              <div key={c.id} className="border border-gray-100 rounded-xl p-4 hover:border-green-200 transition-colors">
+              <div key={c.id} className={`border rounded-xl p-4 hover:border-green-400/50 transition-colors ${t.border} ${t.bgCard}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-gray-800 text-sm">{c.name}</span>
+                  <span className={`font-semibold text-sm ${t.heading}`}>{c.name}</span>
                   {c.is_testnet && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">testnet</span>}
                 </div>
-                <div className="text-xs text-gray-500 space-y-1">
-                  <div>ID: <span className="font-mono text-gray-700">{c.chain_id}</span></div>
-                  <div className="truncate">RPC: <span className="font-mono text-gray-700">{c.rpc_url}</span></div>
-                  <div>Currency: <span className="font-mono text-gray-700">{c.native_currency}</span></div>
+                <div className={`text-xs space-y-1 ${t.textMuted}`}>
+                  <div>ID: <span className={`font-mono ${t.text}`}>{c.chain_id}</span></div>
+                  <div className="truncate">RPC: <span className={`font-mono ${t.text}`}>{c.rpc_url}</span></div>
+                  <div>Currency: <span className={`font-mono ${t.text}`}>{c.native_currency}</span></div>
                 </div>
               </div>
             ))}
@@ -372,9 +376,10 @@ function RunnerCoinSection() {
 
 /* ── Shared UI helpers ── */
 function Card({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
+  const t = useTheme();
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
-      <h3 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
+    <div className={`border rounded-2xl shadow-sm p-6 ${t.bgCard} ${t.border}`}>
+      <h3 className={`text-base font-semibold mb-4 flex items-center gap-2 ${t.heading}`}>
         <span className="text-xl">{icon}</span>{title}
       </h3>
       {children}
@@ -383,11 +388,12 @@ function Card({ title, icon, children }: { title: string; icon: string; children
 }
 
 function InputField({ label, value, onChange, type = 'text', placeholder }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) {
+  const t = useTheme();
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1.5">{label}</label>
+      <label className={`block text-xs font-medium mb-1.5 ${t.textMuted}`}>{label}</label>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400" />
+        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 ${t.inputBorder} ${t.inputBg} ${t.inputText}`} />
     </div>
   );
 }
