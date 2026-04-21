@@ -94,16 +94,18 @@ export default function AppWindow({ win }: { win: WindowState }) {
         <span className="text-base leading-none">{win.icon}</span>
         <span className="text-sm font-medium text-gray-700 flex-1 truncate select-none">{win.title}</span>
         <div className="flex items-center gap-1.5 ml-2">
-          {([
-            { color: 'yellow', action: () => minimizeWindow(win.id), label: '−', title: 'Minimize' },
-            { color: 'green',  action: () => maximizeWindow(win.id), label: '+', title: 'Maximize' },
-            { color: 'red',    action: () => closeWindow(win.id),    label: '✕', title: 'Close' },
-          ] as const).map(btn => (
-            <button key={btn.title} onMouseDown={e => e.stopPropagation()} onClick={btn.action} title={btn.title}
-              className={`w-3 h-3 rounded-full bg-${btn.color}-400 hover:bg-${btn.color}-500 transition-colors flex items-center justify-center group`}>
-              <span className={`text-${btn.color}-800 opacity-0 group-hover:opacity-100 text-[8px] leading-none font-bold`}>{btn.label}</span>
-            </button>
-          ))}
+          <button onMouseDown={e => e.stopPropagation()} onClick={() => minimizeWindow(win.id)} title="Minimize"
+            className="w-3 h-3 rounded-full bg-yellow-400 hover:bg-yellow-500 transition-colors flex items-center justify-center group">
+            <span className="text-yellow-800 opacity-0 group-hover:opacity-100 text-[8px] leading-none font-bold">−</span>
+          </button>
+          <button onMouseDown={e => e.stopPropagation()} onClick={() => maximizeWindow(win.id)} title="Maximize"
+            className="w-3 h-3 rounded-full bg-green-400 hover:bg-green-500 transition-colors flex items-center justify-center group">
+            <span className="text-green-800 opacity-0 group-hover:opacity-100 text-[8px] leading-none font-bold">+</span>
+          </button>
+          <button onMouseDown={e => e.stopPropagation()} onClick={() => closeWindow(win.id)} title="Close"
+            className="w-3 h-3 rounded-full bg-red-400 hover:bg-red-500 transition-colors flex items-center justify-center group">
+            <span className="text-red-800 opacity-0 group-hover:opacity-100 text-[8px] leading-none font-bold">✕</span>
+          </button>
         </div>
       </div>
 

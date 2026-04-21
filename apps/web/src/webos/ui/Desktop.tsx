@@ -40,8 +40,7 @@ export default function Desktop() {
         {APP_REGISTRY.map(app => (
           <button
             key={app.id}
-            onDoubleClick={() => launch(app)}
-            onClick={e => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); launch(app); }}
             className="group flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-white/10 active:bg-white/20 transition-colors text-center"
           >
             <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/15 flex items-center justify-center text-3xl shadow-lg group-hover:bg-white/15 transition-colors">
