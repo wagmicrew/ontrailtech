@@ -102,12 +102,9 @@ export default function AuraLeaderboard() {
                 <span className="w-7 text-sm font-bold text-gray-400 tabular-nums">
                   {i + 1}
                 </span>
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                  {r.avatar_url ? (
-                    <img src={r.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-                  ) : (
-                    r.username?.[0]?.toUpperCase() || '?'
-                  )}
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center text-white text-sm font-bold shrink-0 relative overflow-hidden">
+                  {r.username?.[0]?.toUpperCase() || '?'}
+                  {r.avatar_url && <img src={r.avatar_url} alt="" className="absolute inset-0 w-full h-full rounded-full object-cover" onError={(e) => e.currentTarget.remove()} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">
@@ -137,12 +134,9 @@ export default function AuraLeaderboard() {
                 <span className="w-7 text-sm font-bold text-gray-400 tabular-nums">
                   {i + 1}
                 </span>
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                  {a.avatar_url ? (
-                    <img src={a.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-                  ) : (
-                    a.username?.[0]?.toUpperCase() || '🏛'
-                  )}
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm font-bold shrink-0 relative overflow-hidden">
+                  {a.username?.[0]?.toUpperCase() || '🏛'}
+                  {a.avatar_url && <img src={a.avatar_url} alt="" className="absolute inset-0 w-full h-full rounded-full object-cover" onError={(e) => e.currentTarget.remove()} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">

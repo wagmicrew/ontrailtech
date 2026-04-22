@@ -290,7 +290,11 @@ export default function ProfileScreen() {
       <View style={styles.avatarSection}>
         <TouchableOpacity onPress={pickAvatar} disabled={uploadingAvatar}>
           {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+            <Image
+              source={{ uri: avatarUrl }}
+              style={styles.avatar}
+              onError={() => setUser((prev) => prev ? { ...prev, avatar_url: null } : prev)}
+            />
           ) : (
             <View style={[styles.avatar, styles.avatarPlaceholder]}>
               <Text style={styles.avatarInitial}>

@@ -480,12 +480,9 @@ export default function Explore() {
                   className="w-full flex items-center gap-3 px-5 py-3 hover:bg-emerald-50/40 transition-colors text-left"
                 >
                   <span className="w-6 text-sm font-bold text-gray-300 tabular-nums">{i + 1}</span>
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center text-white text-sm font-bold shrink-0 overflow-hidden">
-                    {r.avatar_url ? (
-                      <img src={r.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      r.username?.[0]?.toUpperCase() || '?'
-                    )}
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center text-white text-sm font-bold shrink-0 overflow-hidden relative">
+                    {r.username?.[0]?.toUpperCase() || '?'}
+                    {r.avatar_url && <img src={r.avatar_url} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => e.currentTarget.remove()} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{r.username || 'Anonymous'}</p>
@@ -527,12 +524,9 @@ export default function Explore() {
                   onClick={() => t.username && navigate(`/profile?runner=${t.username}`)}
                   className="w-full flex items-center gap-3 px-5 py-3 hover:bg-sky-50/40 transition-colors text-left"
                 >
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white text-sm font-bold shrink-0 overflow-hidden">
-                    {t.avatar_url ? (
-                      <img src={t.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      t.username?.[0]?.toUpperCase() || '?'
-                    )}
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white text-sm font-bold shrink-0 overflow-hidden relative">
+                    {t.username?.[0]?.toUpperCase() || '?'}
+                    {t.avatar_url && <img src={t.avatar_url} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => e.currentTarget.remove()} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{t.username}</p>

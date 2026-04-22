@@ -3,11 +3,15 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://api.ontrail.tech';
 const MEDIA_KEYS = new Set(['avatar_url', 'header_image_url', 'avatarUrl', 'headerImageUrl']);
 
 function normalizeMediaUrl(value: unknown): unknown {
-  if (typeof value !== 'string' || !value.startsWith('/media/')) {
+  if (typeof value !== 'string') {
     return value;
   }
 
-  return `${API_BASE}${value}`;
+  if (value.startsWith('/media/') || value.startsWith('/avatars/')) {
+    return `${API_BASE}${value}`;
+  }
+
+  return value;
 }
 
 function normalizeApiData<T>(value: T): T {

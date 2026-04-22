@@ -1689,8 +1689,9 @@ function BackgroundPaths() {
 function Avatar({ avatar, username, size }: { avatar: string | null; username: string; size: 'md' | 'lg' }) {
   const sizeClass = size === 'lg' ? 'h-28 w-28 text-4xl' : 'h-14 w-14 text-xl';
   return (
-    <div className={`flex items-center justify-center overflow-hidden rounded-full bg-slate-900 font-black text-white ring-4 ring-white/30 ${sizeClass}`}>
-      {avatar ? <img src={avatar} alt={`${username} avatar`} className="h-full w-full object-cover" /> : username[0]?.toUpperCase() || '?'}
+    <div className={`relative flex items-center justify-center overflow-hidden rounded-full bg-slate-900 font-black text-white ring-4 ring-white/30 ${sizeClass}`}>
+      {username[0]?.toUpperCase() || '?'}
+      {avatar && <img src={avatar} alt={`${username} avatar`} className="absolute inset-0 h-full w-full object-cover" onError={(e) => e.currentTarget.remove()} />}
     </div>
   );
 }
