@@ -32,7 +32,7 @@ from typing import Any
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,11 +115,8 @@ class AlchemyConfigIn(BaseModel):
     webhook_signing_key: str = ""
 
 
-class ChainList(BaseModel):
-    __root__: list[dict]
-
-    class Config:
-        arbitrary_types_allowed = True
+class ChainList(RootModel[list[dict]]):
+    pass
 
 
 class ContractIn(BaseModel):
