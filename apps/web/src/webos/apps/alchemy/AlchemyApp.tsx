@@ -45,6 +45,21 @@ interface ContractAbi {
   created_at: string;
 }
 
+interface PrebuiltContract {
+  name: string;
+  artifact_path: string;
+  artifact_exists: boolean;
+}
+
+interface DeployEstimate {
+  contract_name: string;
+  chain: string;
+  gas_estimate: number;
+  gas_price_wei: number;
+  max_cost_wei: number;
+  max_cost_eth: string;
+}
+
 interface NftAccessRule {
   id: string;
   name: string;
@@ -676,16 +691,59 @@ function ChainsTab({ t }: { t: ReturnType<typeof useTheme> }) {
 
 function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
   const [abis, setAbis] = useState<ContractAbi[]>([]);
+  const [prebuilt, setPrebuilt] = useState<PrebuiltContract[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [prebuiltChain, setPrebuiltChain] = useState('base-mainnet');
+  const [prebuiltLoading, setPrebuiltLoading] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<DeployEstimate | null>(null);
   const [form, setForm] = useState({ name: '', address: '', chain: 'base-mainnet', abi: '', bytecode: '' });
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ContractAbi | null>(null);
 
   useEffect(() => {
-    adminFetch<ContractAbi[]>('/admin/alchemy/contracts').then(setAbis).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([
+      adminFetch<ContractAbi[]>('/admin/alchemy/contracts').then(setAbis).catch(() => {}),
+      adminFetch<PrebuiltContract[]>('/admin/alchemy/contracts/prebuilt').then(setPrebuilt).catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, []);
+
+  async function estimatePrebuilt(name: string) {
+    setPrebuiltLoading(name);
+    setError(null);
+    try {
+      const r = await adminFetch<DeployEstimate>('/admin/alchemy/contracts/prebuilt/estimate', {
+        method: 'POST',
+        body: JSON.stringify({ contract_name: name, chain: prebuiltChain, deploy: false }),
+      });
+      setEstimate(r);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Estimate failed');
+    } finally {
+      setPrebuiltLoading(null);
+    }
+  }
+
+  async function publishPrebuilt(name: string, deploy: boolean) {
+    setPrebuiltLoading(name + (deploy ? ':deploy' : ':publish'));
+    setError(null);
+    try {
+      const r = await adminFetch<{ record: ContractAbi; estimate: DeployEstimate; deployed?: { tx_hash: string; contract_address: string } }>(
+        '/admin/alchemy/contracts/prebuilt/publish',
+        {
+          method: 'POST',
+          body: JSON.stringify({ contract_name: name, chain: prebuiltChain, deploy }),
+        }
+      );
+      setAbis(prev => [r.record, ...prev]);
+      setEstimate(r.estimate);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Publish failed');
+    } finally {
+      setPrebuiltLoading(null);
+    }
+  }
 
   async function publish() {
     setPublishing(true); setError(null);
@@ -728,6 +786,66 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
           >
             {showAdd ? 'Cancel' : '+ Add Contract'}
           </button>
+        </div>
+
+        <div className={`rounded-xl border ${t.border} ${t.bgCard} p-4 space-y-3`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className={`text-xs font-semibold ${t.heading}`}>Prebuilt Contracts</p>
+              <p className={`text-[10px] ${t.textMuted}`}>One-click estimate and deploy from server artifacts</p>
+            </div>
+            <select
+              value={prebuiltChain}
+              onChange={e => setPrebuiltChain(e.target.value)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text}`}
+            >
+              {['base-mainnet', 'base-sepolia', 'eth-mainnet', 'sepolia'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2">
+            {prebuilt.map(p => (
+              <div key={p.name} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${t.border}`}>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-semibold ${t.text}`}>{p.name}</p>
+                  <p className={`text-[10px] ${p.artifact_exists ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {p.artifact_exists ? 'Artifact ready' : 'Artifact missing, compile on publish'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => estimatePrebuilt(p.name)}
+                  disabled={!!prebuiltLoading}
+                  className={`px-2.5 py-1.5 rounded text-[11px] border ${t.border} ${t.textMuted} hover:text-violet-400 hover:border-violet-400 disabled:opacity-40`}
+                >
+                  {prebuiltLoading === p.name ? 'Estimating…' : 'Estimate'}
+                </button>
+                <button
+                  onClick={() => publishPrebuilt(p.name, false)}
+                  disabled={!!prebuiltLoading}
+                  className={`px-2.5 py-1.5 rounded text-[11px] border ${t.border} ${t.textMuted} hover:text-violet-400 hover:border-violet-400 disabled:opacity-40`}
+                >
+                  {prebuiltLoading === p.name + ':publish' ? 'Publishing…' : 'Publish ABI'}
+                </button>
+                <button
+                  onClick={() => publishPrebuilt(p.name, true)}
+                  disabled={!!prebuiltLoading}
+                  className="px-2.5 py-1.5 rounded text-[11px] bg-violet-500 text-white hover:bg-violet-600 disabled:opacity-40"
+                >
+                  {prebuiltLoading === p.name + ':deploy' ? 'Deploying…' : 'Deploy + Publish'}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {estimate && (
+            <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 p-3">
+              <p className="text-xs font-semibold text-violet-300">Gas Estimate: {estimate.contract_name}</p>
+              <p className={`text-[11px] mt-1 ${t.textMuted}`}>
+                Gas: {estimate.gas_estimate.toLocaleString()} · Max Cost: {estimate.max_cost_eth} ETH
+              </p>
+              <p className={`text-[11px] ${t.textMuted}`}>Recommended wallet balance: at least {Math.max(Number(estimate.max_cost_eth) * 1.5, 0.003).toFixed(6)} ETH</p>
+            </div>
+          )}
         </div>
 
         <AnimatePresence>

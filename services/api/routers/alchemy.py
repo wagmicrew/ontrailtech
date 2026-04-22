@@ -25,8 +25,10 @@ import hmac
 import json
 import logging
 import os
+import subprocess
 import uuid
 from base64 import b64decode, b64encode
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -188,6 +190,13 @@ class ContractIn(BaseModel):
     chain: str = "base-mainnet"
     abi: str  # JSON string
     bytecode: str = ""
+
+
+class PrebuiltContractActionIn(BaseModel):
+    contract_name: str
+    chain: str = "base-mainnet"
+    deploy: bool = False
+    constructor_args: list[Any] = []
 
 
 class AccessRuleIn(BaseModel):
@@ -354,6 +363,217 @@ async def delete_contract(contract_id: str, admin: User = Depends(require_admin)
     _store["contracts"] = [c for c in _store["contracts"] if c["id"] != contract_id]
     await _store_set("contracts", _store["contracts"])
     return {"status": "deleted"}
+
+
+_PREBUILT_CONTRACTS = {
+    "AccessNFT": "AccessNFT",
+    "POINFT": "POINFT",
+    "RouteNFT": "RouteNFT",
+    "RunnerToken": "RunnerToken",
+}
+
+
+def _repo_root() -> Path:
+    # services/api/routers/alchemy.py -> repo root is 3 levels up
+    return Path(__file__).resolve().parents[3]
+
+
+def _contracts_root() -> Path:
+    return _repo_root() / "contracts"
+
+
+def _artifact_path(contract_name: str) -> Path:
+    canonical = _PREBUILT_CONTRACTS.get(contract_name)
+    if not canonical:
+        raise HTTPException(status_code=400, detail=f"Unsupported prebuilt contract: {contract_name}")
+    return _contracts_root() / "artifacts" / "contracts" / f"{canonical}.sol" / f"{canonical}.json"
+
+
+def _compile_contracts_if_needed() -> None:
+    cmd = ["npx", "hardhat", "compile"]
+    proc = subprocess.run(
+        cmd,
+        cwd=str(_contracts_root()),
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stderr or proc.stdout or "").splitlines()[-20:])
+        raise HTTPException(
+            status_code=500,
+            detail=f"Hardhat compile failed on server. {tail}",
+        )
+
+
+def _load_artifact(contract_name: str) -> tuple[list[Any], str]:
+    artifact_file = _artifact_path(contract_name)
+    if not artifact_file.exists():
+        _compile_contracts_if_needed()
+    if not artifact_file.exists():
+        raise HTTPException(status_code=500, detail=f"Artifact still missing: {artifact_file}")
+
+    artifact = json.loads(artifact_file.read_text(encoding="utf-8"))
+    abi = artifact.get("abi") or []
+    bytecode = artifact.get("bytecode") or ""
+    if not isinstance(abi, list):
+        raise HTTPException(status_code=500, detail=f"Invalid ABI in artifact for {contract_name}")
+    if not isinstance(bytecode, str) or not bytecode:
+        raise HTTPException(status_code=500, detail=f"Missing bytecode in artifact for {contract_name}")
+    return abi, bytecode
+
+
+def _default_constructor_args(contract_name: str, wallet_address: str) -> list[Any]:
+    if contract_name == "RunnerToken":
+        # 1B supply with 18 decimals for EVM fallback token
+        return ["OnTrail Runner", "RUNR", 1_000_000_000 * (10 ** 18), wallet_address]
+    return []
+
+
+def _chain_rpc_url(chain: str, api_key: str) -> str:
+    return f"https://{chain}.g.alchemy.com/v2/{api_key}"
+
+
+async def _estimate_deploy(
+    private_key_hex: str,
+    chain: str,
+    abi: list[Any],
+    bytecode: str,
+    constructor_args: list[Any],
+) -> dict[str, Any]:
+    from eth_account import Account
+    from web3 import AsyncWeb3
+    from web3.providers import AsyncHTTPProvider
+
+    api_key = await _api_key()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Alchemy API key not configured")
+
+    w3 = AsyncWeb3(AsyncHTTPProvider(_chain_rpc_url(chain, api_key)))
+    acct = Account.from_key(private_key_hex)
+    contract = w3.eth.contract(abi=abi, bytecode=bytecode)
+    ctor = contract.constructor(*constructor_args)
+
+    gas = await ctor.estimate_gas({"from": acct.address})
+    gas_price = await w3.eth.gas_price
+    max_cost_wei = int(gas * 12 // 10) * gas_price
+    return {
+        "from": acct.address,
+        "gas_estimate": int(gas),
+        "gas_price_wei": int(gas_price),
+        "max_cost_wei": int(max_cost_wei),
+        "max_cost_eth": str(max_cost_wei / 10**18),
+    }
+
+
+async def _deploy_prebuilt_contract(
+    private_key_hex: str,
+    chain: str,
+    abi: list[Any],
+    bytecode: str,
+    constructor_args: list[Any],
+) -> dict[str, Any]:
+    from eth_account import Account
+    from web3 import AsyncWeb3
+    from web3.providers import AsyncHTTPProvider
+
+    api_key = await _api_key()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Alchemy API key not configured")
+
+    w3 = AsyncWeb3(AsyncHTTPProvider(_chain_rpc_url(chain, api_key)))
+    acct = Account.from_key(private_key_hex)
+    contract = w3.eth.contract(abi=abi, bytecode=bytecode)
+    ctor = contract.constructor(*constructor_args)
+
+    nonce = await w3.eth.get_transaction_count(acct.address)
+    gas_price = await w3.eth.gas_price
+    chain_id = await w3.eth.chain_id
+    gas = await ctor.estimate_gas({"from": acct.address})
+    tx = await ctor.build_transaction({
+        "from": acct.address,
+        "nonce": nonce,
+        "gas": int(gas * 12 // 10),
+        "gasPrice": gas_price,
+        "chainId": chain_id,
+    })
+    signed = acct.sign_transaction(tx)
+    tx_hash = await w3.eth.send_raw_transaction(signed.rawTransaction)
+    receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=240)
+    return {
+        "tx_hash": "0x" + tx_hash.hex(),
+        "contract_address": receipt.contractAddress,
+    }
+
+
+@router.get("/contracts/prebuilt")
+async def list_prebuilt_contracts(admin: User = Depends(require_admin)):
+    contracts = []
+    for key in _PREBUILT_CONTRACTS:
+        artifact = _artifact_path(key)
+        contracts.append({
+            "name": key,
+            "artifact_path": str(artifact),
+            "artifact_exists": artifact.exists(),
+        })
+    return contracts
+
+
+@router.post("/contracts/prebuilt/estimate")
+async def estimate_prebuilt_contract(body: PrebuiltContractActionIn, admin: User = Depends(require_admin)):
+    wallet = await _store_get("wallet")
+    private_key = _decrypt(wallet.get("private_key_enc", ""))
+    address = wallet.get("address", "")
+    if not private_key or not address:
+        raise HTTPException(status_code=400, detail="Site wallet not configured")
+
+    abi, bytecode = _load_artifact(body.contract_name)
+    ctor_args = body.constructor_args or _default_constructor_args(body.contract_name, address)
+    estimate = await _estimate_deploy(private_key, body.chain, abi, bytecode, ctor_args)
+    return {
+        "contract_name": body.contract_name,
+        "chain": body.chain,
+        "constructor_args": ctor_args,
+        **estimate,
+    }
+
+
+@router.post("/contracts/prebuilt/publish")
+async def publish_prebuilt_contract(body: PrebuiltContractActionIn, admin: User = Depends(require_admin)):
+    wallet = await _store_get("wallet")
+    private_key = _decrypt(wallet.get("private_key_enc", ""))
+    address = wallet.get("address", "")
+    if not private_key or not address:
+        raise HTTPException(status_code=400, detail="Site wallet not configured")
+
+    abi, bytecode = _load_artifact(body.contract_name)
+    ctor_args = body.constructor_args or _default_constructor_args(body.contract_name, address)
+    estimate = await _estimate_deploy(private_key, body.chain, abi, bytecode, ctor_args)
+
+    deployed: dict[str, Any] | None = None
+    contract_address = ""
+    if body.deploy:
+        deployed = await _deploy_prebuilt_contract(private_key, body.chain, abi, bytecode, ctor_args)
+        contract_address = deployed["contract_address"]
+
+    record = {
+        "id": str(uuid.uuid4()),
+        "name": body.contract_name,
+        "address": contract_address,
+        "chain": body.chain,
+        "abi": json.dumps(abi),
+        "bytecode": bytecode,
+        "created_at": __import__("datetime").datetime.utcnow().isoformat(),
+    }
+    _store["contracts"].insert(0, record)
+    await _store_set("contracts", _store["contracts"])
+
+    return {
+        "record": record,
+        "estimate": estimate,
+        "deployed": deployed,
+    }
 
 
 # ─── NFT Access Rules ─────────────────────────────────────────────────────────
@@ -1072,7 +1292,7 @@ async def test_jwt_token(admin: User = Depends(require_admin)):
 async def traillab_pois(db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     """List all POIs for the Mint tab picker."""
     result = await db.execute(text(
-        "SELECT id, name, description, lat, lng, rarity FROM pois ORDER BY created_at DESC LIMIT 300"
+        "SELECT id, name, description, latitude, longitude, rarity FROM pois ORDER BY minted_at DESC LIMIT 300"
     ))
     rows = result.fetchall()
     return [
