@@ -5,7 +5,7 @@ import { useTheme } from '../../core/theme-store';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TabId = 'api-keys' | 'nft' | 'chains' | 'contracts' | 'access' | 'wallet' | 'connectkit' | 'runnercoin' | 'mint';
+type TabId = 'api-keys' | 'nft' | 'chains' | 'contracts' | 'access' | 'wallet' | 'connectkit' | 'runnercoin' | 'mint' | 'tokens';
 
 interface SidebarTab { id: TabId; label: string; icon: React.ReactNode }
 
@@ -81,6 +81,38 @@ interface RunnerCoinConfig {
   tge_threshold: string;
   contract_address: string;
   treasury_address: string;
+  launch_chain: string;
+  bonding_curve_locked: boolean;
+  lp_tx_hash: string;
+  lp_address: string;
+}
+
+interface PortfolioToken {
+  symbol: string;
+  name: string;
+  balance: string;
+  decimals: number;
+  contract_address: string;
+  network: string;
+  logo?: string;
+  price_usd?: number | null;
+  value_usd?: number | null;
+}
+
+interface TokenPrice {
+  symbol: string;
+  price: string;
+  currency: string;
+  updatedAt?: string;
+}
+
+interface LaunchGuide {
+  chain: string;
+  dex: string;
+  steps: string[];
+  smithii_url: string | null;
+  uniswap_url: string;
+  cost_estimate: string;
 }
 
 // ─── Sidebar tabs ─────────────────────────────────────────────────────────────
@@ -155,6 +187,14 @@ const TABS: SidebarTab[] = [
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'tokens', label: 'Tokens',
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
   },
@@ -1205,26 +1245,111 @@ const DEFAULT_RC: RunnerCoinConfig = {
   token_name: 'OnTrail Runner', token_symbol: 'ONTR', total_supply: '1000000000',
   bonding_curve_k: '0.0001', base_price: '0.000001', tge_threshold: '69420',
   contract_address: '', treasury_address: '',
+  launch_chain: 'base-mainnet', bonding_curve_locked: false, lp_tx_hash: '', lp_address: '',
 };
+
+const LAUNCH_CHAINS = [
+  { value: 'base-mainnet', label: 'Base Mainnet (recommended — cheap gas, EVM, Uniswap v3)' },
+  { value: 'eth-mainnet', label: 'Ethereum Mainnet (highest liquidity, highest gas)' },
+  { value: 'solana-mainnet', label: 'Solana (pump.fun bonding curve, Raydium at TGE)' },
+];
 
 function RunnerCoinTab({ t }: { t: ReturnType<typeof useTheme> }) {
   const [cfg, setCfg] = useState<RunnerCoinConfig>(DEFAULT_RC);
+  const [guide, setGuide] = useState<LaunchGuide | null>(null);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [lockSaving, setLockSaving] = useState(false);
+  const [lockResult, setLockResult] = useState<string | null>(null);
   const { save, saving, saved, error } = useSave(async (data: RunnerCoinConfig) => {
     await adminFetch('/admin/alchemy/runnercoin', { method: 'PUT', body: JSON.stringify(data) });
+    // Also save launch info
+    await adminFetch('/admin/alchemy/runnercoin/launch', {
+      method: 'PUT',
+      body: JSON.stringify({
+        launch_chain: data.launch_chain,
+        bonding_curve_locked: data.bonding_curve_locked,
+        lp_tx_hash: data.lp_tx_hash,
+        lp_address: data.lp_address,
+      }),
+    });
   });
 
   useEffect(() => {
     adminFetch<RunnerCoinConfig>('/admin/alchemy/runnercoin').then(setCfg).catch(() => {});
   }, []);
 
-  function set(k: keyof RunnerCoinConfig, v: string) { setCfg(p => ({ ...p, [k]: v })); }
+  async function fetchGuide() {
+    setGuideLoading(true);
+    try {
+      const g = await adminFetch<LaunchGuide>('/admin/alchemy/runnercoin/launch-guide');
+      setGuide(g);
+    } catch { /* ignore */ }
+    finally { setGuideLoading(false); }
+  }
+
+  async function lockBondingCurve() {
+    setLockSaving(true); setLockResult(null);
+    try {
+      await adminFetch('/admin/alchemy/runnercoin/launch', {
+        method: 'PUT',
+        body: JSON.stringify({
+          launch_chain: cfg.launch_chain,
+          bonding_curve_locked: true,
+          lp_tx_hash: cfg.lp_tx_hash,
+          lp_address: cfg.lp_address,
+        }),
+      });
+      setCfg(p => ({ ...p, bonding_curve_locked: true }));
+      setLockResult('✓ Bonding curve locked. Proceed to create liquidity pool.');
+    } catch (e: unknown) {
+      setLockResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`);
+    } finally { setLockSaving(false); }
+  }
+
+  function set(k: keyof RunnerCoinConfig, v: string | boolean) {
+    setCfg(p => ({ ...p, [k]: v }));
+  }
+
+  const isSolana = cfg.launch_chain === 'solana-mainnet';
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 overflow-y-auto">
       <div>
-        <h2 className={`text-lg font-semibold ${t.heading}`}>Runner Coin (ONTR)</h2>
-        <p className={`text-xs mt-1 ${t.textMuted}`}>Solana SPL token with pump.fun bonding curve. Migrates to Raydium at TGE threshold.</p>
+        <h2 className={`text-lg font-semibold ${t.heading}`}>Runner Coin Settings</h2>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>Configure, launch, and manage the ONTR runner token across chains</p>
       </div>
+
+      <Section title="Launch Chain">
+        <Field label="Choose Launch Chain" hint="Determines token standard, DEX, and LP creation flow">
+          <select
+            value={cfg.launch_chain}
+            onChange={e => { set('launch_chain', e.target.value); setGuide(null); }}
+            className={`w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`}
+          >
+            {LAUNCH_CHAINS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </Field>
+        <div className={`flex items-center gap-3 p-3 rounded-lg border ${t.border} ${t.bgCard}`}>
+          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.bonding_curve_locked ? 'bg-orange-400' : 'bg-green-400'}`} />
+          <div className="flex-1">
+            <p className={`text-xs font-medium ${t.text}`}>
+              Bonding Curve: {cfg.bonding_curve_locked ? '🔒 Locked (ready for LP)' : '🟢 Active (accumulating)'}
+            </p>
+            <p className={`text-[10px] ${t.textMuted}`}>
+              {cfg.bonding_curve_locked ? 'Create a liquidity pool to enable open trading.' : 'Token is on bonding curve. Lock when ready to migrate to open market.'}
+            </p>
+          </div>
+          {!cfg.bonding_curve_locked && (
+            <button onClick={lockBondingCurve} disabled={lockSaving}
+              className="px-3 py-1.5 rounded-lg text-[10px] font-medium bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-40 transition-colors flex-shrink-0">
+              {lockSaving ? 'Locking…' : 'Lock Curve'}
+            </button>
+          )}
+        </div>
+        {lockResult && (
+          <p className={`text-xs ${lockResult.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{lockResult}</p>
+        )}
+      </Section>
 
       <Section title="Token Identity">
         <div className="grid grid-cols-2 gap-3">
@@ -1240,31 +1365,81 @@ function RunnerCoinTab({ t }: { t: ReturnType<typeof useTheme> }) {
         </Field>
       </Section>
 
-      <Section title="Bonding Curve">
+      <Section title={isSolana ? 'Bonding Curve (pump.fun)' : 'Bonding Curve'}>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Curve K (slope)" hint="pump.fun: y = k·x²">
+          <Field label="Curve K (slope)" hint={isSolana ? 'pump.fun uses quadratic: price = base + k·x²' : 'Custom EVM curve: price = base + k·x²'}>
             <Input value={cfg.bonding_curve_k} onChange={v => set('bonding_curve_k', v)} placeholder="0.0001" />
           </Field>
-          <Field label="Base Price (SOL)" hint="Price at zero supply">
+          <Field label={isSolana ? 'Base Price (SOL)' : 'Base Price (ETH)'} hint="Price at zero supply">
             <Input value={cfg.base_price} onChange={v => set('base_price', v)} placeholder="0.000001" />
           </Field>
         </div>
-        <Field label="TGE Threshold (SOL)" hint="SOL raised to trigger Raydium migration (pump.fun: 69420)">
-          <Input value={cfg.tge_threshold} onChange={v => set('tge_threshold', v)} placeholder="69420" />
+        <Field label={isSolana ? 'TGE Threshold (SOL)' : 'Bonding Curve Lock Target'} hint={isSolana ? 'SOL raised to trigger Raydium migration (pump.fun default: 69420)' : 'Amount raised to lock curve and open Uniswap trading'}>
+          <Input value={cfg.tge_threshold} onChange={v => set('tge_threshold', v)} placeholder={isSolana ? '69420' : '10'} />
         </Field>
       </Section>
 
       <Section title="Deployed Addresses">
         <Field label="Token Contract Address">
-          <Input value={cfg.contract_address} onChange={v => set('contract_address', v)} placeholder="Solana mint address…" />
+          <Input value={cfg.contract_address} onChange={v => set('contract_address', v)} placeholder={isSolana ? 'Solana mint address (base58)…' : '0x… ERC-20 address'} />
         </Field>
         <Field label="Treasury Address">
           <Input value={cfg.treasury_address} onChange={v => set('treasury_address', v)} placeholder="Treasury wallet address…" />
         </Field>
       </Section>
 
+      {cfg.bonding_curve_locked && (
+        <Section title="Liquidity Pool">
+          <Field label="LP Transaction Hash">
+            <Input value={cfg.lp_tx_hash} onChange={v => set('lp_tx_hash', v)} placeholder="0x… (from Uniswap / pump.fun)" />
+          </Field>
+          <Field label="LP Contract / Pool Address">
+            <Input value={cfg.lp_address} onChange={v => set('lp_address', v)} placeholder="0x… Uniswap v3 pool address" />
+          </Field>
+        </Section>
+      )}
+
       {error && <p className="text-xs text-red-400">{error}</p>}
-      <SaveBtn onClick={() => save(cfg)} saving={saving} saved={saved} label="Save Runner Coin Config" />
+      <SaveBtn onClick={() => save(cfg)} saving={saving} saved={saved} label="Save Runner Coin Settings" />
+
+      {/* LP Creation Guide */}
+      <Section title="Liquidity Pool Guide">
+        <div className={`p-4 rounded-xl border ${t.border} ${t.bgCard} space-y-3`}>
+          <div className="flex items-center justify-between">
+            <p className={`text-xs font-medium ${t.text}`}>Step-by-step LP creation for {LAUNCH_CHAINS.find(c => c.value === cfg.launch_chain)?.label.split(' (')[0]}</p>
+            <button onClick={fetchGuide} disabled={guideLoading}
+              className="px-3 py-1 rounded-lg text-[10px] font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40">
+              {guideLoading ? 'Loading…' : guide ? 'Refresh' : 'Load Guide'}
+            </button>
+          </div>
+
+          {guide && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] px-2 py-1 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20`}>{guide.dex}</span>
+                <span className={`text-[10px] px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20`}>{guide.cost_estimate}</span>
+              </div>
+              <ol className="space-y-2">
+                {guide.steps.map((step, i) => (
+                  <li key={i} className={`text-xs ${t.textMuted} pl-1`}>{step}</li>
+                ))}
+              </ol>
+              <div className="flex gap-2 pt-1">
+                {guide.smithii_url && (
+                  <a href={guide.smithii_url} target="_blank" rel="noreferrer"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white transition-colors">
+                    Open Smithii →
+                  </a>
+                )}
+                <a href={guide.uniswap_url} target="_blank" rel="noreferrer"
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${t.border} ${t.textMuted} hover:border-violet-400 hover:text-violet-400 transition-colors`}>
+                  {isSolana ? 'pump.fun →' : 'Uniswap →'}
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </Section>
     </div>
   );
 }
@@ -1490,6 +1665,162 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
   );
 }
 
+// ─── Tab: Tokens (Portfolio) ──────────────────────────────────────────────────
+
+const PORTFOLIO_NETWORKS = [
+  { value: 'eth-mainnet', label: 'Ethereum' },
+  { value: 'base-mainnet', label: 'Base' },
+  { value: 'polygon-mainnet', label: 'Polygon' },
+  { value: 'solana-mainnet', label: 'Solana' },
+  { value: 'opt-mainnet', label: 'Optimism' },
+  { value: 'arb-mainnet', label: 'Arbitrum' },
+];
+
+function TokensTab({ t }: { t: ReturnType<typeof useTheme> }) {
+  const [address, setAddress] = useState('');
+  const [selectedNetworks, setSelectedNetworks] = useState<string[]>(['eth-mainnet', 'base-mainnet']);
+  const [tokens, setTokens] = useState<PortfolioToken[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [priceSymbols, setPriceSymbols] = useState('');
+  const [prices, setPrices] = useState<TokenPrice[]>([]);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+
+  function toggleNetwork(v: string) {
+    setSelectedNetworks(prev =>
+      prev.includes(v) ? prev.filter(n => n !== v) : [...prev, v]
+    );
+  }
+
+  async function fetchPortfolio() {
+    if (!address) return;
+    setLoading(true); setError(null); setTokens([]);
+    try {
+      const nets = selectedNetworks.join(',');
+      const data = await adminFetch<{ tokens: PortfolioToken[] }>(
+        `/admin/alchemy/portfolio/tokens?address=${encodeURIComponent(address)}&networks=${encodeURIComponent(nets)}`
+      );
+      setTokens(data.tokens || []);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load portfolio');
+    } finally { setLoading(false); }
+  }
+
+  async function fetchPrices() {
+    const syms = priceSymbols.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (!syms.length) return;
+    setPriceLoading(true); setPriceError(null); setPrices([]);
+    try {
+      const data = await adminFetch<{ data: TokenPrice[] }>(
+        '/admin/alchemy/prices/by-symbol',
+        { method: 'POST', body: JSON.stringify({ symbols: syms }) }
+      );
+      // Normalize — Alchemy wraps in data.data array
+      const arr: TokenPrice[] = Array.isArray(data) ? data : (data as { data?: TokenPrice[] }).data || [];
+      setPrices(arr);
+    } catch (e: unknown) {
+      setPriceError(e instanceof Error ? e.message : 'Failed to fetch prices');
+    } finally { setPriceLoading(false); }
+  }
+
+  const totalUsd = tokens.reduce((sum, t) => sum + (t.value_usd ?? 0), 0);
+
+  return (
+    <div className="space-y-6 p-6 overflow-y-auto">
+      <div>
+        <h2 className={`text-lg font-semibold ${t.heading}`}>Token Portfolio</h2>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>View ERC-20 / SPL token balances for any wallet via Alchemy Portfolio API</p>
+      </div>
+
+      <Section title="Wallet Lookup">
+        <Field label="Wallet Address">
+          <Input value={address} onChange={setAddress} placeholder="0x… or Solana address (base58)" />
+        </Field>
+        <div>
+          <p className={`text-[10px] font-medium mb-2 ${t.textMuted}`}>Networks</p>
+          <div className="flex flex-wrap gap-2">
+            {PORTFOLIO_NETWORKS.map(n => (
+              <button key={n.value} onClick={() => toggleNetwork(n.value)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium border transition-colors ${
+                  selectedNetworks.includes(n.value)
+                    ? 'bg-violet-500/20 text-violet-400 border-violet-500/50'
+                    : `${t.bgCard} ${t.textMuted} ${t.border} hover:border-violet-500/40`
+                }`}>
+                {n.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button onClick={fetchPortfolio} disabled={loading || !address}
+          className="mt-1 px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
+          {loading ? 'Loading…' : 'Fetch Portfolio'}
+        </button>
+        {error && <p className="text-xs text-red-400">{error}</p>}
+      </Section>
+
+      {tokens.length > 0 && (
+        <Section title={`Token Balances (${tokens.length} tokens${totalUsd > 0 ? ` · $${totalUsd.toFixed(2)}` : ''})`}>
+          <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+            {tokens.map((tok, i) => (
+              <div key={i} className={`flex items-center gap-3 p-2.5 rounded-lg border ${t.border} ${t.bgCard}`}>
+                {tok.logo ? (
+                  <img src={tok.logo} alt={tok.symbol} className="w-6 h-6 rounded-full flex-shrink-0 object-cover" />
+                ) : (
+                  <div className="w-6 h-6 rounded-full flex-shrink-0 bg-violet-500/20 flex items-center justify-center">
+                    <span className={`text-[8px] font-bold text-violet-400`}>{(tok.symbol || '?').slice(0, 2)}</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className={`text-xs font-semibold ${t.text}`}>{tok.symbol}</span>
+                    <span className={`text-[10px] ${t.textMuted} truncate`}>{tok.name}</span>
+                  </div>
+                  <p className={`text-[10px] ${t.textMuted}`}>{tok.network}</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className={`text-xs font-mono ${t.text}`}>
+                    {parseFloat(tok.balance || '0').toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                  </p>
+                  {tok.value_usd != null && (
+                    <p className={`text-[10px] ${t.textMuted}`}>${tok.value_usd.toFixed(2)}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      <Section title="Token Price Lookup">
+        <Field label="Symbols (comma-separated)" hint="e.g. ETH, USDC, ONTR">
+          <Input value={priceSymbols} onChange={setPriceSymbols} placeholder="ETH, USDC, MATIC" />
+        </Field>
+        <button onClick={fetchPrices} disabled={priceLoading || !priceSymbols}
+          className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
+          {priceLoading ? 'Fetching…' : 'Get Prices'}
+        </button>
+        {priceError && <p className="text-xs text-red-400">{priceError}</p>}
+        {prices.length > 0 && (
+          <div className="space-y-1.5 mt-2">
+            {prices.map((p, i) => (
+              <div key={i} className={`flex items-center justify-between p-2.5 rounded-lg border ${t.border} ${t.bgCard}`}>
+                <span className={`text-xs font-semibold ${t.text}`}>{p.symbol}</span>
+                <div className="text-right">
+                  <span className={`text-xs font-mono text-violet-400`}>${parseFloat(p.price || '0').toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+                  {p.currency && p.currency !== 'USD' && (
+                    <span className={`ml-1 text-[10px] ${t.textMuted}`}>{p.currency}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function AlchemyApp() {
@@ -1506,6 +1837,7 @@ export default function AlchemyApp() {
     'connectkit': <ConnectKitTab t={t} />,
     'runnercoin': <RunnerCoinTab t={t} />,
     'mint': <MintTab t={t} />,
+    'tokens': <TokensTab t={t} />,
   };
 
   return (

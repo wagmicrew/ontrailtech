@@ -714,3 +714,214 @@ async def airdrop_runner_tokens(body: AirdropIn, admin: User = Depends(require_a
     logger.info("Airdrop queued: %d addresses, amount=%d", len(body.addresses), body.amount)
     return {"status": "queued", "success": len(body.addresses), "failed": 0}
 
+
+# ─── Portfolio API — tokens by address ───────────────────────────────────────
+# Alchemy Portfolio API v3:
+# GET https://api.g.alchemy.com/v3/{apiKey}/assets/tokens/by-address
+#   ?walletAddress={addr}&networks={network}
+
+@router.get("/portfolio/tokens")
+async def portfolio_tokens(
+    address: str = "",
+    networks: str = "eth-mainnet",
+    admin: User = Depends(require_admin),
+):
+    """
+    Fetch ERC-20 token balances for a wallet address using Alchemy Portfolio API v3.
+    `networks` accepts a comma-separated list of Alchemy network IDs.
+    """
+    if not address:
+        raise HTTPException(status_code=400, detail="address required")
+    key = _api_key()
+    if not key:
+        raise HTTPException(status_code=400, detail="Alchemy API key not configured")
+
+    url = f"https://api.g.alchemy.com/v3/{key}/assets/tokens/by-address"
+    params: dict[str, str] = {
+        "walletAddress": address,
+        "networks": networks,
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.get(url, params=params)
+        r.raise_for_status()
+        data = r.json()
+
+    tokens = []
+    for item in data.get("data", {}).get("tokens", []):
+        tokens.append({
+            "symbol": item.get("symbol", ""),
+            "name": item.get("name", ""),
+            "balance": item.get("tokenBalance", "0"),
+            "decimals": item.get("decimals", 18),
+            "contract_address": item.get("contractAddress", ""),
+            "network": item.get("network", networks.split(",")[0]),
+            "logo": item.get("logo") or item.get("thumbnail"),
+            "price_usd": item.get("price", {}).get("value") if isinstance(item.get("price"), dict) else None,
+            "value_usd": item.get("valueUsd"),
+        })
+    return {"tokens": tokens, "wallet": address}
+
+
+# ─── Token Prices API ─────────────────────────────────────────────────────────
+# Alchemy Prices API v1:
+# POST https://api.g.alchemy.com/prices/v1/{apiKey}/tokens/by-symbol
+# POST https://api.g.alchemy.com/prices/v1/{apiKey}/tokens/by-address
+
+class PricesBySymbolIn(BaseModel):
+    symbols: list[str]  # e.g. ["ETH", "USDC", "ONTR"]
+
+
+class PricesByAddressIn(BaseModel):
+    addresses: list[dict]  # e.g. [{"network": "base-mainnet", "address": "0x..."}]
+
+
+@router.post("/prices/by-symbol")
+async def prices_by_symbol(body: PricesBySymbolIn, admin: User = Depends(require_admin)):
+    """Get token prices by symbol using Alchemy Prices API."""
+    key = _api_key()
+    if not key:
+        raise HTTPException(status_code=400, detail="Alchemy API key not configured")
+    url = f"https://api.g.alchemy.com/prices/v1/{key}/tokens/by-symbol"
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(url, json={"symbols": body.symbols})
+        r.raise_for_status()
+    return r.json()
+
+
+@router.post("/prices/by-address")
+async def prices_by_address(body: PricesByAddressIn, admin: User = Depends(require_admin)):
+    """Get token prices by contract address using Alchemy Prices API."""
+    key = _api_key()
+    if not key:
+        raise HTTPException(status_code=400, detail="Alchemy API key not configured")
+    url = f"https://api.g.alchemy.com/prices/v1/{key}/tokens/by-address"
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(url, json={"addresses": body.addresses})
+        r.raise_for_status()
+    return r.json()
+
+
+@router.get("/prices/runner-token")
+async def runner_token_price(admin: User = Depends(require_admin)):
+    """
+    Valuation lookup for the deployed runner token.
+    Uses Prices API by address if contract is deployed, else returns bonding curve preview.
+    """
+    rc = _store.get("runnercoin") or {}
+    contract = rc.get("contract_address", "")
+    chain = rc.get("launch_chain", "base-mainnet")
+
+    if contract and chain in ("eth-mainnet", "base-mainnet", "polygon-mainnet"):
+        key = _api_key()
+        if key:
+            url = f"https://api.g.alchemy.com/prices/v1/{key}/tokens/by-address"
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    r = await client.post(url, json={"addresses": [{"network": chain, "address": contract}]})
+                    if r.status_code == 200:
+                        return {"source": "alchemy-prices", "data": r.json()}
+            except Exception as exc:
+                logger.warning("Prices API failed: %s", exc)
+
+    # Fallback: bonding curve formula preview
+    k = float(rc.get("bonding_curve_k", 0.0001))
+    base_price = float(rc.get("base_price", 0.000001))
+    total_supply = float(rc.get("total_supply", 1_000_000_000))
+    tge_threshold = float(rc.get("tge_threshold", 69420))
+    symbol = rc.get("token_symbol", "ONTR")
+
+    simulated_supply = total_supply * 0.2  # assume 20% sold
+    price_at_20pct = base_price + k * (simulated_supply ** 2)
+
+    return {
+        "source": "bonding-curve-estimate",
+        "symbol": symbol,
+        "chain": chain,
+        "contract": contract or "not deployed",
+        "estimated_price_eth": price_at_20pct,
+        "bonding_curve": {"k": k, "base_price": base_price, "tge_threshold": tge_threshold},
+    }
+
+
+# ─── Runner Token launch chain setting ───────────────────────────────────────
+
+class RunnerCoinLaunchIn(BaseModel):
+    launch_chain: str = "base-mainnet"  # "solana-mainnet" | "eth-mainnet" | "base-mainnet"
+    bonding_curve_locked: bool = False
+    lp_tx_hash: str = ""
+    lp_address: str = ""
+
+
+@router.put("/runnercoin/launch")
+async def save_runner_launch(body: RunnerCoinLaunchIn, admin: User = Depends(require_admin)):
+    """Save launch chain, bonding curve lock state, and LP details."""
+    rc = _store.get("runnercoin") or {}
+    rc.update(body.dict())
+    _store["runnercoin"] = rc
+    return {"status": "saved", **body.dict()}
+
+
+@router.get("/runnercoin/launch-guide")
+async def runner_launch_guide(admin: User = Depends(require_admin)):
+    """
+    Return the chain-specific LP creation guide for the configured launch chain.
+    """
+    rc = _store.get("runnercoin") or {}
+    chain = rc.get("launch_chain", "base-mainnet")
+    token_symbol = rc.get("token_symbol", "ONTR")
+    contract = rc.get("contract_address", "<deploy first>")
+
+    guides = {
+        "eth-mainnet": {
+            "chain": "Ethereum Mainnet",
+            "dex": "Uniswap v3",
+            "steps": [
+                f"1. Deploy {token_symbol} ERC-20 to Ethereum mainnet via Contracts tab",
+                "2. Go to Smithii LP creator: https://tools.smithii.io/liquidity-pool/ethereum",
+                f"3. Select Base Token: {contract} ({token_symbol})",
+                "4. Select Quote Token: WETH (0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)",
+                "5. Add liquidity amounts — this sets the initial price",
+                "6. Click 'Create Liquidity Pool' (costs ~0.001 ETH + gas)",
+                "   — OR — go directly to https://app.uniswap.org/pool",
+            ],
+            "smithii_url": "https://tools.smithii.io/liquidity-pool/ethereum",
+            "uniswap_url": "https://app.uniswap.org/pool",
+            "cost_estimate": "~0.001 ETH + gas (~$5-30)",
+        },
+        "base-mainnet": {
+            "chain": "Base Mainnet (recommended — cheapest gas)",
+            "dex": "Uniswap v3 on Base",
+            "steps": [
+                f"1. Deploy {token_symbol} ERC-20 to Base mainnet via Contracts tab",
+                "2. Go to Smithii Base LP creator: https://tools.smithii.io/liquidity-pool/base",
+                f"3. Select Base Token: {contract} ({token_symbol})",
+                "4. Select Quote Token: WETH on Base (0x4200000000000000000000000000000000000006)",
+                "5. Set liquidity amounts (determines initial price)",
+                "6. Click 'Create Liquidity Pool'",
+                "   — OR — use Uniswap on Base: https://app.uniswap.org/pool?chain=base",
+            ],
+            "smithii_url": "https://tools.smithii.io/liquidity-pool/base",
+            "uniswap_url": "https://app.uniswap.org/pool?chain=base",
+            "cost_estimate": "~$0.05-0.50 gas",
+        },
+        "solana-mainnet": {
+            "chain": "Solana Mainnet (pump.fun bonding curve)",
+            "dex": "pump.fun → Raydium on TGE",
+            "steps": [
+                f"1. Run the Solana deployment script: cd contracts && npx ts-node scripts/runner-token-solana.ts deploy",
+                f"2. Token Symbol: {token_symbol} | TGE threshold: {rc.get('tge_threshold', '69420')} SOL",
+                "3. pump.fun automatically manages the bonding curve from launch",
+                "4. On TGE threshold reached, pump.fun migrates liquidity to Raydium AMM automatically",
+                "5. Monitor migration: npx ts-node scripts/runner-token-solana.ts check-migration",
+                "6. After migration, the token trades on Raydium with permanent liquidity",
+            ],
+            "smithii_url": None,
+            "uniswap_url": "https://pump.fun",
+            "cost_estimate": "~0.02 SOL to deploy + pump.fun fees",
+        },
+    }
+
+    return guides.get(chain, guides["base-mainnet"])
+
+

@@ -799,15 +799,24 @@ function OverviewPanel({
       <div className="space-y-6 xl:col-span-8">
         <div className="grid gap-6 lg:grid-cols-2">
           <ActivityRingsCard steps={stepBalance} tips={totalTips} reputation={reputation} />
-          <CurrencyTransferCard
-            isOwner={isOwner}
-            profileName={profileName}
-            fiatAmount={fiatAmount}
-            tipAmount={tipAmount}
-            onFiatAmountChange={onFiatAmountChange}
-            onTipAmountChange={onTipAmountChange}
-            onAction={onStageMoneyAction}
-          />
+          {isOwner ? (
+            <OnrampPanel
+              profileName={profileName}
+              fiatAmount={fiatAmount}
+              tipAmount={tipAmount}
+              onFiatAmountChange={onFiatAmountChange}
+              onTipAmountChange={onTipAmountChange}
+              onAction={onStageMoneyAction}
+            />
+          ) : (
+            <EthTipPanel
+              profileName={profileName}
+              tipAmount={tipAmount}
+              recipientWallet={runner?.walletAddress}
+              onTipAmountChange={onTipAmountChange}
+              onAction={onStageMoneyAction}
+            />
+          )}
         </div>
 
         <BentoGridStats
@@ -1130,8 +1139,7 @@ function RingMeter({ label, value, goal, color, helper }: { label: string; value
   );
 }
 
-function CurrencyTransferCard({
-  isOwner,
+function OnrampPanel({
   profileName,
   fiatAmount,
   tipAmount,
@@ -1139,7 +1147,6 @@ function CurrencyTransferCard({
   onTipAmountChange,
   onAction,
 }: {
-  isOwner: boolean;
   profileName: string;
   fiatAmount: number;
   tipAmount: string;
@@ -1149,31 +1156,82 @@ function CurrencyTransferCard({
 }) {
   return (
     <div className="rounded-[32px] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.84),rgba(240,249,255,0.86),rgba(236,253,245,0.84))] p-6 text-slate-900 shadow-[0_16px_50px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Currency transfer</p>
-      <h2 className="mt-2 text-2xl font-black text-slate-900">{isOwner ? 'Fiat onramp and tip desk' : 'Support in seconds'}</h2>
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Wallet funding</p>
+      <h2 className="mt-2 text-2xl font-black text-slate-900">Add funds</h2>
 
       <div className="mt-5 space-y-4 rounded-[28px] border border-white/70 bg-white/60 p-4 backdrop-blur">
-        <TransferRow label="From" value={`$${fiatAmount.toFixed(0)} USD`} sublabel={isOwner ? 'Bank card •••• 4589' : 'Support balance'} />
-        <TransferRow label="To" value={isOwner ? `${formatEth(Number(tipAmount) * 0.85)}` : `${tipAmount} ETH`} sublabel={isOwner ? `${profileName} wallet` : `${profileName} tip jar`} />
+        <TransferRow label="From" value={`$${fiatAmount.toFixed(0)} USD`} sublabel="Bank card •••• 4589" />
+        <TransferRow label="To" value={formatEth(fiatAmount * 0.85 / 3200)} sublabel={`${profileName} wallet`} />
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className="mt-4">
         <label className="text-sm text-slate-700">
-          <span className="mb-2 block">Fiat amount</span>
+          <span className="mb-2 block">Amount (USD)</span>
           <input type="range" min="25" max="500" step="5" value={fiatAmount} onChange={(event) => onFiatAmountChange(Number(event.target.value))} className="w-full accent-emerald-500" />
-        </label>
-        <label className="text-sm text-slate-700">
-          <span className="mb-2 block">Tip amount</span>
-          <input value={tipAmount} onChange={(event) => onTipAmountChange(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400" placeholder="0.015" />
+          <span className="mt-1 block text-xs text-slate-500">≈ {formatEth(fiatAmount * 0.85 / 3200)} ETH after fees</span>
         </label>
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button onClick={() => onAction('onramp', profileName)} className="rounded-2xl bg-gradient-to-r from-emerald-500 to-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:opacity-95">
-          {isOwner ? 'Preview onramp' : 'Top up to support'}
+      <div className="mt-5">
+        <button onClick={() => onAction('onramp', profileName)} className="w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:opacity-95">
+          Preview onramp
         </button>
-        <button onClick={() => onAction('tip', profileName)} className="rounded-2xl border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-white/85">
-          {isOwner ? 'Stage a tip' : 'Tip now'}
+      </div>
+    </div>
+  );
+}
+
+function EthTipPanel({
+  profileName,
+  tipAmount,
+  recipientWallet,
+  onTipAmountChange,
+  onAction,
+}: {
+  profileName: string;
+  tipAmount: string;
+  recipientWallet?: string;
+  onTipAmountChange: (value: string) => void;
+  onAction: (mode: 'tip' | 'onramp', profileName: string) => void;
+}) {
+  const ethAmt = parseFloat(tipAmount) || 0;
+  const presets = ['0.005', '0.01', '0.025', '0.05'];
+
+  return (
+    <div className="rounded-[32px] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.84),rgba(240,249,255,0.86),rgba(236,253,245,0.84))] p-6 text-slate-900 shadow-[0_16px_50px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-600">Tip in ETH</p>
+      <h2 className="mt-2 text-2xl font-black text-slate-900">Tip {profileName}</h2>
+
+      <div className="mt-5 space-y-4 rounded-[28px] border border-white/70 bg-white/60 p-4 backdrop-blur">
+        <TransferRow label="To" value={`${profileName}`} sublabel={recipientWallet ? `${recipientWallet.slice(0, 6)}…${recipientWallet.slice(-4)}` : 'wallet on file'} />
+        <TransferRow label="Amount" value={`${ethAmt > 0 ? ethAmt.toFixed(4) : '—'} ETH`} sublabel="ETH balance only" />
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <div className="flex gap-2">
+          {presets.map(p => (
+            <button key={p} onClick={() => onTipAmountChange(p)}
+              className={`flex-1 rounded-2xl py-2 text-xs font-semibold border transition-colors ${
+                tipAmount === p
+                  ? 'bg-violet-600 text-white border-violet-600'
+                  : 'border-white/80 bg-white/65 text-slate-700 hover:bg-white/85'
+              }`}>
+              {p} ETH
+            </button>
+          ))}
+        </div>
+        <input
+          value={tipAmount}
+          onChange={(event) => onTipAmountChange(event.target.value)}
+          className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-violet-400/40"
+          placeholder="Custom amount in ETH"
+        />
+      </div>
+
+      <div className="mt-5">
+        <button onClick={() => onAction('tip', profileName)} disabled={ethAmt <= 0}
+          className="w-full rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-40">
+          Send {ethAmt > 0 ? `${ethAmt} ETH` : 'tip'} to {profileName}
         </button>
       </div>
     </div>
