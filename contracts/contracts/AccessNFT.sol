@@ -81,7 +81,7 @@ contract AccessNFT is ERC721, ERC721URIStorage, Ownable, Pausable {
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
         address from = _ownerOf(tokenId);
         if (soulbound && from != address(0) && to != address(0)) {
-            revert("AccessNFT: soulbound — non-transferable");
+            revert("AccessNFT: soulbound - non-transferable");
         }
         return super._update(to, tokenId, auth);
     }
