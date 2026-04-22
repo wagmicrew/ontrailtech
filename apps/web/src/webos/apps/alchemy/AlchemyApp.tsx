@@ -1101,7 +1101,7 @@ function WalletTab({ t }: { t: ReturnType<typeof useTheme> }) {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
               className={`w-full max-w-lg mx-4 rounded-2xl border border-red-500/30 ${t.bg} p-6 space-y-4 shadow-2xl`}
             >
               <div className="flex items-center gap-3">
