@@ -31,7 +31,7 @@ from typing import Any
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, RootModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,7 +74,7 @@ def _decrypt(token: str) -> str:
 # avoids hitting the DB on every request while surviving server restarts.
 
 _DB_PREFIX = "alchemy:"
-_STORE_KEYS = ("config", "chains", "contracts", "access_rules", "wallet", "connectkit", "runnercoin")
+_STORE_KEYS = ("config", "chains", "contracts", "access_rules", "wallet", "connectkit", "runnercoin", "jwt_config")
 
 _store: dict[str, Any] = {
     "config": {
@@ -88,6 +88,7 @@ _store: dict[str, Any] = {
     "wallet": {},            # {"address": str, "private_key_enc": str, …}
     "connectkit": {},
     "runnercoin": {},
+    "jwt_config": {"private_key_enc": "", "public_key": "", "key_id": "", "enabled": False},
 }
 _store_loaded: dict[str, bool] = {k: False for k in _STORE_KEYS}
 
@@ -990,3 +991,135 @@ async def runner_launch_guide(admin: User = Depends(require_admin)):
     return guides.get(chain, guides["base-mainnet"])
 
 
+# ─── JWT Auth Config ──────────────────────────────────────────────────────────
+
+class JwtConfigIn(BaseModel):
+    key_id: str = ""
+    enabled: bool = False
+
+
+@router.get("/jwt/config")
+async def get_jwt_config(admin: User = Depends(require_admin)):
+    cfg = await _store_get("jwt_config")
+    return {
+        "has_private_key": bool(cfg.get("private_key_enc")),
+        "public_key": cfg.get("public_key", ""),
+        "key_id": cfg.get("key_id", ""),
+        "enabled": cfg.get("enabled", False),
+    }
+
+
+@router.post("/jwt/generate")
+async def jwt_generate_keypair(admin: User = Depends(require_admin)):
+    """Generate a new RSA-2048 key pair for Alchemy JWT auth."""
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+
+    cfg = await _store_get("jwt_config")
+    cfg["private_key_enc"] = _encrypt(private_pem)
+    cfg["public_key"] = public_pem
+    await _store_set("jwt_config", cfg)
+    return {"status": "generated", "public_key": public_pem}
+
+
+@router.put("/jwt/config")
+async def save_jwt_config(body: JwtConfigIn, admin: User = Depends(require_admin)):
+    """Save key_id returned by Alchemy dashboard after uploading public key."""
+    cfg = await _store_get("jwt_config")
+    cfg["key_id"] = body.key_id
+    cfg["enabled"] = body.enabled
+    await _store_set("jwt_config", cfg)
+    return {"status": "saved"}
+
+
+@router.post("/jwt/test-token")
+async def test_jwt_token(admin: User = Depends(require_admin)):
+    """Generate a short-lived test JWT using the stored private key."""
+    import time
+    import jwt as pyjwt
+
+    cfg = await _store_get("jwt_config")
+    pk_pem = _decrypt(cfg.get("private_key_enc", ""))
+    key_id = cfg.get("key_id", "")
+    if not pk_pem:
+        raise HTTPException(status_code=400, detail="No private key generated. Run 'Generate Key Pair' first.")
+    if not key_id:
+        raise HTTPException(status_code=400, detail="key_id not set. Upload the public key to Alchemy dashboard and paste the key_id.")
+    now = int(time.time())
+    token = pyjwt.encode(
+        {"iat": now, "exp": now + 600},
+        pk_pem,
+        algorithm="RS256",
+        headers={"kid": key_id},
+    )
+    return {"jwt": token, "expires_in": 600}
+
+
+# ─── Trail Lab pickers ────────────────────────────────────────────────────────
+
+@router.get("/traillab/pois")
+async def traillab_pois(db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    """List all POIs for the Mint tab picker."""
+    result = await db.execute(text(
+        "SELECT id, name, description, lat, lng, rarity FROM pois ORDER BY created_at DESC LIMIT 300"
+    ))
+    rows = result.fetchall()
+    return [
+        {"id": str(r[0]), "name": r[1], "description": r[2] or "", "lat": float(r[3]), "lng": float(r[4]), "rarity": r[5] or "common"}
+        for r in rows
+    ]
+
+
+@router.get("/traillab/routes")
+async def traillab_routes(db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    """List all routes for the Mint tab picker."""
+    result = await db.execute(text(
+        "SELECT id, name, description, difficulty, distance_km, elevation_gain_m FROM routes ORDER BY created_at DESC LIMIT 300"
+    ))
+    rows = result.fetchall()
+    return [
+        {"id": str(r[0]), "name": r[1], "description": r[2] or "", "difficulty": r[3] or "easy",
+         "distance_km": float(r[4] or 0), "elevation_m": float(r[5] or 0)}
+        for r in rows
+    ]
+
+
+# ─── NFT Metadata Image Upload ────────────────────────────────────────────────
+
+@router.post("/upload/image")
+async def upload_nft_image(
+    file: UploadFile = File(...),
+    admin: User = Depends(require_admin),
+):
+    """Upload an image for use in NFT metadata. Returns a hosted URL."""
+    allowed = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Only JPEG/PNG/GIF/WEBP images are allowed")
+
+    # Limit size to 5MB
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 5MB")
+
+    ext = (file.filename or "img").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "jpg"
+    if ext not in ("jpg", "jpeg", "png", "gif", "webp"):
+        ext = "jpg"
+    filename = f"nft_{uuid.uuid4().hex}.{ext}"
+    media_dir = os.path.join(os.path.dirname(__file__), "..", "media", "nft")
+    os.makedirs(media_dir, exist_ok=True)
+    with open(os.path.join(media_dir, filename), "wb") as fh:
+        fh.write(content)
+
+    base_url = os.environ.get("API_BASE_URL", "https://api.ontrail.tech")
+    return {"url": f"{base_url}/media/nft/{filename}", "filename": filename}

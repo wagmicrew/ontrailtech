@@ -5,7 +5,7 @@ import { useTheme } from '../../core/theme-store';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TabId = 'api-keys' | 'nft' | 'chains' | 'contracts' | 'access' | 'wallet' | 'connectkit' | 'runnercoin' | 'mint' | 'tokens';
+type TabId = 'api-keys' | 'nft' | 'chains' | 'contracts' | 'access' | 'wallet' | 'connectkit' | 'runnercoin' | 'mint' | 'tokens' | 'jwt';
 
 interface SidebarTab { id: TabId; label: string; icon: React.ReactNode }
 
@@ -115,6 +115,31 @@ interface LaunchGuide {
   cost_estimate: string;
 }
 
+interface JwtConfig {
+  has_private_key: boolean;
+  public_key: string;
+  key_id: string;
+  enabled: boolean;
+}
+
+interface TrailLabPoi {
+  id: string;
+  name: string;
+  description: string;
+  lat: number;
+  lng: number;
+  rarity: string;
+}
+
+interface TrailLabRoute {
+  id: string;
+  name: string;
+  description: string;
+  difficulty: string;
+  distance_km: number;
+  elevation_m: number;
+}
+
 // ─── Sidebar tabs ─────────────────────────────────────────────────────────────
 
 const TABS: SidebarTab[] = [
@@ -195,6 +220,14 @@ const TABS: SidebarTab[] = [
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'jwt', label: 'JWT Auth',
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33" />
       </svg>
     ),
   },
@@ -1444,6 +1477,130 @@ function RunnerCoinTab({ t }: { t: ReturnType<typeof useTheme> }) {
   );
 }
 
+// ─── Tab: JWT Auth ────────────────────────────────────────────────────────────
+
+function JwtTab({ t }: { t: ReturnType<typeof useTheme> }) {
+  const [cfg, setCfg] = useState<JwtConfig>({ has_private_key: false, public_key: '', key_id: '', enabled: false });
+  const [keyId, setKeyId] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [testJwt, setTestJwt] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { save, saving, saved, error } = useSave(async () => {
+    await adminFetch('/admin/alchemy/jwt/config', { method: 'PUT', body: JSON.stringify({ key_id: keyId, enabled }) });
+  });
+
+  useEffect(() => {
+    adminFetch<JwtConfig>('/admin/alchemy/jwt/config').then(d => {
+      setCfg(d); setKeyId(d.key_id); setEnabled(d.enabled);
+    }).catch(() => {});
+  }, []);
+
+  async function generate() {
+    setGenerating(true);
+    try {
+      const r = await adminFetch<{ public_key: string }>('/admin/alchemy/jwt/generate', { method: 'POST', body: '{}' });
+      setCfg(prev => ({ ...prev, has_private_key: true, public_key: r.public_key }));
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Failed'); }
+    finally { setGenerating(false); }
+  }
+
+  async function testToken() {
+    setTesting(true); setTestJwt('');
+    try {
+      const r = await adminFetch<{ jwt: string }>('/admin/alchemy/jwt/test-token', { method: 'POST', body: '{}' });
+      setTestJwt(r.jwt);
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Failed'); }
+    finally { setTesting(false); }
+  }
+
+  function copyKey() {
+    navigator.clipboard.writeText(cfg.public_key);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h2 className={`text-lg font-semibold ${t.heading}`}>JWT Auth</h2>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>Replace API key in URL with RSA-signed JWTs for enhanced security</p>
+      </div>
+
+      <Section title="Setup Guide">
+        <ol className={`space-y-2 text-xs ${t.textMuted}`}>
+          <li><span className="text-violet-400 font-medium">1.</span> Generate a key pair below</li>
+          <li><span className="text-violet-400 font-medium">2.</span> Copy the public key → paste into Alchemy Dashboard → Apps → JWT Keys</li>
+          <li><span className="text-violet-400 font-medium">3.</span> Copy the Key ID shown in Alchemy dashboard</li>
+          <li><span className="text-violet-400 font-medium">4.</span> Paste Key ID here → Save → Enable JWT Auth</li>
+        </ol>
+      </Section>
+
+      <Section title="Key Pair">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className={`flex-1 px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.textMuted}`}>
+              {cfg.has_private_key ? '✓ Private key stored (encrypted)' : 'No key pair generated yet'}
+            </div>
+            <button onClick={generate} disabled={generating}
+              className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-50 transition-colors whitespace-nowrap">
+              {generating ? 'Generating…' : cfg.has_private_key ? 'Regenerate' : 'Generate Key Pair'}
+            </button>
+          </div>
+          {cfg.public_key && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-medium ${t.text}`}>Public Key (paste in Alchemy Dashboard)</span>
+                <button onClick={copyKey}
+                  className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${copied ? 'bg-green-500/20 text-green-400' : 'bg-violet-500/10 text-violet-400 hover:bg-violet-500/20'}`}>
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className={`p-3 rounded-lg text-[10px] font-mono overflow-auto border ${t.border} ${t.bgCard} ${t.textMuted} max-h-32`}>{cfg.public_key}</pre>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Key ID & Enable">
+        <div className="space-y-3">
+          <Field label="Alchemy Key ID" hint="From Alchemy dashboard after uploading public key">
+            <Input value={keyId} onChange={setKeyId} placeholder="kid_…" />
+          </Field>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className={`text-xs font-medium ${t.text}`}>Enable JWT Auth</p>
+              <p className={`text-[10px] ${t.textMuted}`}>Use signed JWTs instead of API key in URL</p>
+            </div>
+            <button onClick={() => setEnabled(!enabled)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-violet-500' : 'bg-gray-600'}`}>
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <SaveBtn onClick={() => save(null)} saving={saving} saved={saved} />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+      </Section>
+
+      {cfg.has_private_key && cfg.key_id && (
+        <Section title="Test JWT">
+          <div className="space-y-3">
+            <button onClick={testToken} disabled={testing}
+              className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 disabled:opacity-50 transition-colors">
+              {testing ? 'Generating…' : 'Generate Test JWT (10min)'}
+            </button>
+            {testJwt && (
+              <pre className={`p-3 rounded-lg text-[10px] font-mono overflow-auto border ${t.border} ${t.bgCard} text-green-400 max-h-24 whitespace-pre-wrap break-all`}>{testJwt}</pre>
+            )}
+          </div>
+        </Section>
+      )}
+    </div>
+  );
+}
+
 // ─── Tab: Mint ────────────────────────────────────────────────────────────────
 
 type MintSubtab = 'access-nft' | 'poi' | 'route' | 'airdrop';
@@ -1452,6 +1609,11 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
   const [sub, setSub] = useState<MintSubtab>('access-nft');
   const [result, setResult] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
+  const [siteWallet, setSiteWallet] = useState('');
+
+  // Trail Lab data
+  const [trailPois, setTrailPois] = useState<TrailLabPoi[]>([]);
+  const [trailRoutes, setTrailRoutes] = useState<TrailLabRoute[]>([]);
 
   // Access NFT fields
   const [accessTo, setAccessTo] = useState('');
@@ -1462,6 +1624,7 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
   const [poiTo, setPoiTo] = useState('');
   const [poiUri, setPoiUri] = useState('');
   const [poiRarity, setPoiRarity] = useState('common');
+  const [poiSelected, setPoiSelected] = useState('');
 
   // Route fields
   const [routeTo, setRouteTo] = useState('');
@@ -1470,10 +1633,77 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
   const [routeDistance, setRouteDistance] = useState('');
   const [routeElevation, setRouteElevation] = useState('');
   const [routeGps, setRouteGps] = useState('');
+  const [routeSelected, setRouteSelected] = useState('');
 
   // Airdrop fields
+  const [airdropType, setAirdropType] = useState<'token' | 'access' | 'poi' | 'route'>('token');
   const [airdropAddresses, setAirdropAddresses] = useState('');
   const [airdropAmount, setAirdropAmount] = useState('1');
+  const [airdropContract, setAirdropContract] = useState('');
+  const [transferTo, setTransferTo] = useState('');
+
+  // Image upload
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    adminFetch<SiteWallet>('/admin/alchemy/wallet').then(w => {
+      setSiteWallet(w.address);
+      setAccessTo(w.address);
+      setPoiTo(w.address);
+      setRouteTo(w.address);
+    }).catch(() => {});
+    adminFetch<TrailLabPoi[]>('/admin/alchemy/traillab/pois').then(setTrailPois).catch(() => {});
+    adminFetch<TrailLabRoute[]>('/admin/alchemy/traillab/routes').then(setTrailRoutes).catch(() => {});
+  }, []);
+
+  // When a Trail Lab POI is selected, fill fields
+  useEffect(() => {
+    if (!poiSelected) return;
+    const poi = trailPois.find(p => p.id === poiSelected);
+    if (poi) { setPoiRarity(poi.rarity); }
+  }, [poiSelected, trailPois]);
+
+  // When a Trail Lab Route is selected, fill fields
+  useEffect(() => {
+    if (!routeSelected) return;
+    const route = trailRoutes.find(r => r.id === routeSelected);
+    if (route) {
+      setRouteDifficulty(route.difficulty);
+      setRouteDistance(Math.round(route.distance_km * 1000).toString());
+      setRouteElevation(Math.round(route.elevation_m).toString());
+    }
+  }, [routeSelected, trailRoutes]);
+
+  async function uploadImage(file: File, setUri: (v: string) => void) {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const token = localStorage.getItem('admin_token') || '';
+      const resp = await fetch('/admin/alchemy/upload/image', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json() as { url: string };
+      setUri(data.url);
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Upload failed'); }
+    finally { setUploading(false); }
+  }
+
+  function ImageUpload({ setUri }: { setUri: (v: string) => void }) {
+    return (
+      <label className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs border border-dashed cursor-pointer transition-colors ${t.border} ${t.textMuted} hover:border-violet-400 hover:text-violet-400`}>
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+        </svg>
+        {uploading ? 'Uploading…' : 'Upload image'}
+        <input type="file" accept="image/*" className="hidden" disabled={uploading}
+          onChange={e => { const f = e.target.files?.[0]; if (f) uploadImage(f, setUri); }} />
+      </label>
+    );
+  }
 
   async function mintAccessNft() {
     setMinting(true); setResult(null);
@@ -1492,7 +1722,7 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
     try {
       const r = await adminFetch<{ tx_hash: string; token_id: string }>('/admin/alchemy/mint/poi', {
         method: 'POST',
-        body: JSON.stringify({ to: poiTo, uri: poiUri, rarity: poiRarity }),
+        body: JSON.stringify({ to: poiTo, uri: poiUri, rarity: poiRarity, poi_id: poiSelected || undefined }),
       });
       setResult(`✓ POI minted — Token #${r.token_id} | Tx: ${r.tx_hash}`);
     } catch (e: unknown) { setResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`); }
@@ -1502,8 +1732,7 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
   async function mintRoute() {
     setMinting(true); setResult(null);
     try {
-      // Parse GPS from textarea: "lat,lng\nlat,lng\n…"
-      const waypoints: number[] = routeGps.trim().split('\n').flatMap(line => {
+      const waypoints: number[] = routeGps.trim().split('\n').filter(Boolean).flatMap(line => {
         const [lat, lng] = line.split(',').map(s => Math.round(parseFloat(s.trim()) * 1e6));
         return [lat, lng];
       });
@@ -1514,6 +1743,7 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
           distance_meters: parseInt(routeDistance) || 0,
           elevation_gain_meters: parseInt(routeElevation) || 0,
           gps_waypoints: waypoints,
+          route_id: routeSelected || undefined,
         }),
       });
       setResult(`✓ Route minted — Token #${r.token_id} | Tx: ${r.tx_hash} | ${waypoints.length / 2} waypoints`);
@@ -1527,9 +1757,21 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
       const addresses = airdropAddresses.split('\n').map(a => a.trim()).filter(Boolean);
       const r = await adminFetch<{ success: number; failed: number }>('/admin/alchemy/mint/airdrop', {
         method: 'POST',
-        body: JSON.stringify({ addresses, amount: parseInt(airdropAmount) }),
+        body: JSON.stringify({ addresses, amount: parseInt(airdropAmount), nft_type: airdropType, contract: airdropContract }),
       });
-      setResult(`✓ Airdrop complete — ${r.success} success, ${r.failed} failed`);
+      setResult(`✓ Airdrop queued — ${r.success} addresses`);
+    } catch (e: unknown) { setResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`); }
+    finally { setMinting(false); }
+  }
+
+  async function transferNft() {
+    setMinting(true); setResult(null);
+    try {
+      const r = await adminFetch<{ tx_hash: string }>('/admin/alchemy/mint/airdrop', {
+        method: 'POST',
+        body: JSON.stringify({ addresses: [transferTo], amount: parseInt(airdropAmount), nft_type: airdropType, contract: airdropContract }),
+      });
+      setResult(`✓ Transfer queued — Tx: ${r.tx_hash}`);
     } catch (e: unknown) { setResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`); }
     finally { setMinting(false); }
   }
@@ -1538,18 +1780,29 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
     { id: 'access-nft', label: 'Access NFT' },
     { id: 'poi', label: 'POI NFT' },
     { id: 'route', label: 'Route NFT' },
-    { id: 'airdrop', label: 'Airdrop' },
+    { id: 'airdrop', label: 'Airdrop / Transfer' },
   ];
 
   const ACCESS_TIERS = ['runner', 'premium', 'ancient_holder', 'trail_creator', 'nft_holder'];
   const POI_RARITIES = ['common', 'uncommon', 'rare', 'legendary'];
   const DIFFICULTIES = ['easy', 'moderate', 'hard', 'ultra'];
+  const AIRDROP_TYPES = [
+    { value: 'token', label: 'Runner Token' },
+    { value: 'access', label: 'Access NFT' },
+    { value: 'poi', label: 'POI NFT' },
+    { value: 'route', label: 'Route NFT' },
+  ];
+
+  const selectClass = `w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`;
 
   return (
     <div className="space-y-5 p-6">
       <div>
         <h2 className={`text-lg font-semibold ${t.heading}`}>Mint</h2>
-        <p className={`text-xs mt-1 ${t.textMuted}`}>Mint NFTs via site wallet using Alchemy RPC on Base</p>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>
+          Mint NFTs via site wallet using Alchemy RPC
+          {siteWallet && <span className="ml-2 text-violet-400 font-mono">{siteWallet.slice(0, 8)}…{siteWallet.slice(-6)}</span>}
+        </p>
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -1567,17 +1820,19 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
 
           {sub === 'access-nft' && (
             <>
-              <Field label="Recipient Address">
+              <Field label="Recipient Address" hint="Defaults to site wallet">
                 <Input value={accessTo} onChange={setAccessTo} placeholder="0x…" />
               </Field>
               <Field label="Access Tier">
-                <select value={accessTier} onChange={e => setAccessTier(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`}>
+                <select value={accessTier} onChange={e => setAccessTier(e.target.value)} className={selectClass}>
                   {ACCESS_TIERS.map(tier => <option key={tier} value={tier}>{tier}</option>)}
                 </select>
               </Field>
-              <Field label="Metadata URI" hint="IPFS/Arweave URI for the NFT metadata">
-                <Input value={accessUri} onChange={setAccessUri} placeholder="ipfs://Qm…" />
+              <Field label="Metadata URI" hint="IPFS/Arweave URI or upload an image">
+                <div className="flex gap-2">
+                  <Input value={accessUri} onChange={setAccessUri} placeholder="ipfs://Qm… or https://…" />
+                  <ImageUpload setUri={setAccessUri} />
+                </div>
               </Field>
               <button onClick={mintAccessNft} disabled={minting || !accessTo}
                 className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
@@ -1588,15 +1843,25 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
 
           {sub === 'poi' && (
             <>
-              <Field label="Recipient Address">
+              {trailPois.length > 0 && (
+                <Field label="Pick from Trail Lab" hint="Select a POI to auto-fill fields">
+                  <select value={poiSelected} onChange={e => setPoiSelected(e.target.value)} className={selectClass}>
+                    <option value="">— Select POI —</option>
+                    {trailPois.map(p => <option key={p.id} value={p.id}>{p.name} ({p.rarity})</option>)}
+                  </select>
+                </Field>
+              )}
+              <Field label="Recipient Address" hint="Defaults to site wallet">
                 <Input value={poiTo} onChange={setPoiTo} placeholder="0x…" />
               </Field>
-              <Field label="Metadata URI">
-                <Input value={poiUri} onChange={setPoiUri} placeholder="ipfs://Qm…" />
+              <Field label="Metadata URI" hint="IPFS/Arweave URI or upload an image">
+                <div className="flex gap-2">
+                  <Input value={poiUri} onChange={setPoiUri} placeholder="ipfs://Qm… or https://…" />
+                  <ImageUpload setUri={setPoiUri} />
+                </div>
               </Field>
               <Field label="Rarity">
-                <select value={poiRarity} onChange={e => setPoiRarity(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`}>
+                <select value={poiRarity} onChange={e => setPoiRarity(e.target.value)} className={selectClass}>
                   {POI_RARITIES.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </Field>
@@ -1609,16 +1874,26 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
 
           {sub === 'route' && (
             <>
-              <Field label="Recipient Address">
+              {trailRoutes.length > 0 && (
+                <Field label="Pick from Trail Lab" hint="Select a route to auto-fill fields">
+                  <select value={routeSelected} onChange={e => setRouteSelected(e.target.value)} className={selectClass}>
+                    <option value="">— Select Route —</option>
+                    {trailRoutes.map(r => <option key={r.id} value={r.id}>{r.name} ({r.difficulty}, {r.distance_km.toFixed(1)}km)</option>)}
+                  </select>
+                </Field>
+              )}
+              <Field label="Recipient Address" hint="Defaults to site wallet">
                 <Input value={routeTo} onChange={setRouteTo} placeholder="0x…" />
               </Field>
-              <Field label="Metadata URI">
-                <Input value={routeUri} onChange={setRouteUri} placeholder="ipfs://Qm…" />
+              <Field label="Metadata URI" hint="IPFS/Arweave URI or upload an image">
+                <div className="flex gap-2">
+                  <Input value={routeUri} onChange={setRouteUri} placeholder="ipfs://Qm… or https://…" />
+                  <ImageUpload setUri={setRouteUri} />
+                </div>
               </Field>
               <div className="grid grid-cols-3 gap-3">
                 <Field label="Difficulty">
-                  <select value={routeDifficulty} onChange={e => setRouteDifficulty(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`}>
+                  <select value={routeDifficulty} onChange={e => setRouteDifficulty(e.target.value)} className={selectClass}>
                     {DIFFICULTIES.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </Field>
@@ -1629,8 +1904,8 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
                   <Input value={routeElevation} onChange={setRouteElevation} placeholder="300" />
                 </Field>
               </div>
-              <Field label="GPS Waypoints" hint="One coordinate per line: lat,lng (e.g. 59.9139,10.7522)">
-                <Textarea value={routeGps} onChange={setRouteGps} placeholder={"59.9139,10.7522\n59.9200,10.7600\n…"} rows={6} />
+              <Field label="GPS Waypoints" hint="One coordinate per line: lat,lng">
+                <Textarea value={routeGps} onChange={setRouteGps} placeholder={"59.9139,10.7522\n59.9200,10.7600\n…"} rows={4} />
               </Field>
               <button onClick={mintRoute} disabled={minting || !routeTo}
                 className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
@@ -1641,16 +1916,43 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
 
           {sub === 'airdrop' && (
             <>
-              <Field label="Wallet Addresses" hint="One address per line">
-                <Textarea value={airdropAddresses} onChange={setAirdropAddresses} placeholder={"0x…\n0x…\n…"} rows={6} />
+              <Field label="Type">
+                <select value={airdropType} onChange={e => setAirdropType(e.target.value as typeof airdropType)} className={selectClass}>
+                  {AIRDROP_TYPES.map(at => <option key={at.value} value={at.value}>{at.label}</option>)}
+                </select>
               </Field>
+              {airdropType !== 'token' && (
+                <Field label="Contract Address">
+                  <Input value={airdropContract} onChange={setAirdropContract} placeholder="0x…" />
+                </Field>
+              )}
               <Field label="Amount per wallet">
                 <Input value={airdropAmount} onChange={setAirdropAmount} placeholder="1" />
               </Field>
-              <button onClick={airdrop} disabled={minting || !airdropAddresses.trim()}
-                className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
-                {minting ? 'Airdropping…' : 'Send Airdrop'}
-              </button>
+
+              <div className={`p-3 rounded-lg border ${t.border} ${t.bgCard} space-y-3`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-widest text-violet-400`}>Batch Airdrop</p>
+                <Field label="Wallet Addresses" hint="One address per line">
+                  <Textarea value={airdropAddresses} onChange={setAirdropAddresses} placeholder={"0x…\n0x…\n…"} rows={5} />
+                </Field>
+                <button onClick={airdrop} disabled={minting || !airdropAddresses.trim()}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
+                  {minting ? 'Queuing…' : 'Queue Airdrop'}
+                </button>
+              </div>
+
+              {airdropType !== 'token' && (
+                <div className={`p-3 rounded-lg border ${t.border} ${t.bgCard} space-y-3`}>
+                  <p className={`text-[10px] font-semibold uppercase tracking-widest text-violet-400`}>Single Transfer</p>
+                  <Field label="Transfer To Address">
+                    <Input value={transferTo} onChange={setTransferTo} placeholder="0x…" />
+                  </Field>
+                  <button onClick={transferNft} disabled={minting || !transferTo}
+                    className={`px-4 py-2 rounded-lg text-xs font-medium border ${t.border} ${t.textMuted} hover:border-violet-400 hover:text-violet-400 transition-colors disabled:opacity-40`}>
+                    {minting ? 'Transferring…' : 'Transfer NFT'}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </motion.div>
@@ -1838,6 +2140,7 @@ export default function AlchemyApp() {
     'runnercoin': <RunnerCoinTab t={t} />,
     'mint': <MintTab t={t} />,
     'tokens': <TokensTab t={t} />,
+    'jwt': <JwtTab t={t} />,
   };
 
   return (
