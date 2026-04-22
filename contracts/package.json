@@ -6,13 +6,20 @@
     "build": "npx hardhat compile",
     "test": "npx hardhat test",
     "deploy:local": "npx hardhat run scripts/deploy.js --network localhost",
-    "deploy:testnet": "npx hardhat run scripts/deploy.js --network sepolia"
+    "deploy:testnet": "npx hardhat run scripts/deploy.js --network sepolia",
+    "deploy:base": "npx hardhat run scripts/deploy.js --network base",
+    "deploy:solana": "npx ts-node scripts/runner-token-solana.ts deploy"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "hardhat": "^2.22.0"
+    "hardhat": "^2.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.0.0"
+    "@openzeppelin/contracts": "^5.0.0",
+    "@solana/web3.js": "^1.95.3",
+    "@solana/spl-token": "^0.4.8",
+    "bs58": "^5.0.0"
   }
 }

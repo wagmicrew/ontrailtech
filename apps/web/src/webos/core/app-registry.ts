@@ -76,6 +76,16 @@ export const APP_REGISTRY: AppDefinition[] = [
     component: lazy(() => import('../apps/trail-lab/TrailLabApp')),
   },
   {
+    id: 'alchemy',
+    name: 'Alchemy',
+    icon: '⚗',
+    description: 'Alchemy API keys, NFT lookup, chains, contract ABI publisher, and NFT access control',
+    permissions: ['web3.read', 'web3.write'],
+    defaultWidth: 1100,
+    defaultHeight: 700,
+    component: lazy(() => import('../apps/alchemy/AlchemyApp')),
+  },
+  {
     id: 'settings',
     name: 'Settings',
     icon: '⚙',
