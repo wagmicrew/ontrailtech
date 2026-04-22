@@ -812,7 +812,7 @@ function OverviewPanel({
             <EthTipPanel
               profileName={profileName}
               tipAmount={tipAmount}
-              recipientWallet={runner?.wallet_address}
+              recipientWallet={runner?.wallet_address ?? undefined}
               onTipAmountChange={onTipAmountChange}
               onAction={onStageMoneyAction}
             />
