@@ -8,6 +8,8 @@ export interface AppDefinition {
   permissions: string[];
   defaultWidth: number;
   defaultHeight: number;
+  /** Override the global contentPadding for this app's window content area */
+  windowPadding?: string;
   component: React.LazyExoticComponent<React.ComponentType<any>>;
 }
 
@@ -70,6 +72,7 @@ export const APP_REGISTRY: AppDefinition[] = [
     permissions: ['trails.read', 'trails.write'],
     defaultWidth: 1300,
     defaultHeight: 800,
+    windowPadding: '0px',
     component: lazy(() => import('../apps/trail-lab/TrailLabApp')),
   },
   {

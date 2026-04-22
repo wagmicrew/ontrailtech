@@ -697,7 +697,7 @@ export default function TrailLabPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 -m-6 overflow-hidden">
+    <div className="flex h-full min-h-0 overflow-hidden">
 
       <aside className={`${sidebarOpen ? 'w-72' : 'w-0'} flex-shrink-0 bg-white border-r border-gray-100 flex flex-col transition-all duration-200 overflow-hidden`}>
         <div className="h-12 flex items-center gap-2 px-3 border-b border-gray-100 flex-shrink-0">

@@ -47,6 +47,7 @@ function AppLoader({ appId, props, padding }: { appId: string; props?: Record<st
       App not found: <code className="ml-1 font-mono">{appId}</code>
     </div>
   );
+  const effectivePadding = app.windowPadding !== undefined ? app.windowPadding : padding;
   return (
     <Suspense fallback={
       <div className="h-full flex items-center justify-center gap-2 text-sm" style={{ color: 'rgba(150,150,170,0.8)' }}>
@@ -57,7 +58,7 @@ function AppLoader({ appId, props, padding }: { appId: string; props?: Record<st
         Loading…
       </div>
     }>
-      <div className="h-full w-full overflow-auto" style={{ padding }}>
+      <div className="h-full w-full overflow-auto" style={{ padding: effectivePadding }}>
         <C {...(props || {})} />
       </div>
     </Suspense>
