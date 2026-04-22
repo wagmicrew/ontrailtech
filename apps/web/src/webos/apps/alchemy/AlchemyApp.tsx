@@ -5,7 +5,7 @@ import { useTheme } from '../../core/theme-store';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TabId = 'api-keys' | 'nft' | 'chains' | 'contracts' | 'access';
+type TabId = 'api-keys' | 'nft' | 'chains' | 'contracts' | 'access' | 'wallet' | 'connectkit' | 'runnercoin' | 'mint';
 
 interface SidebarTab { id: TabId; label: string; icon: React.ReactNode }
 
@@ -56,6 +56,33 @@ interface NftAccessRule {
   active: boolean;
 }
 
+interface SiteWallet {
+  address: string;
+  has_private_key: boolean;
+  created_at: string;
+}
+
+interface ConnectKitConfig {
+  walletconnect_project_id: string;
+  alchemy_id: string;
+  infura_id: string;
+  app_name: string;
+  app_description: string;
+  app_url: string;
+  app_icon: string;
+}
+
+interface RunnerCoinConfig {
+  token_name: string;
+  token_symbol: string;
+  total_supply: string;
+  bonding_curve_k: string;
+  base_price: string;
+  tge_threshold: string;
+  contract_address: string;
+  treasury_address: string;
+}
+
 // ─── Sidebar tabs ─────────────────────────────────────────────────────────────
 
 const TABS: SidebarTab[] = [
@@ -96,6 +123,38 @@ const TABS: SidebarTab[] = [
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'wallet', label: 'Site Wallet',
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18-3a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3m18-3V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3m18 0H3" />
+      </svg>
+    ),
+  },
+  {
+    id: 'connectkit', label: 'ConnectKit',
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      </svg>
+    ),
+  },
+  {
+    id: 'runnercoin', label: 'Runner Coin',
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'mint', label: 'Mint',
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
       </svg>
     ),
   },
@@ -896,6 +955,541 @@ function AccessTab({ t }: { t: ReturnType<typeof useTheme> }) {
   );
 }
 
+// ─── Tab: Site Wallet ─────────────────────────────────────────────────────────
+
+function WalletTab({ t }: { t: ReturnType<typeof useTheme> }) {
+  const [wallet, setWallet] = useState<SiteWallet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [exportData, setExportData] = useState<{ private_key: string; mnemonic: string } | null>(null);
+  const [showExport, setShowExport] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [confirmExport, setConfirmExport] = useState(false);
+
+  useEffect(() => {
+    adminFetch<SiteWallet>('/admin/alchemy/wallet')
+      .then(setWallet)
+      .catch(() => setWallet(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function createWallet() {
+    setCreating(true); setError(null);
+    try {
+      const w = await adminFetch<SiteWallet>('/admin/alchemy/wallet/create', { method: 'POST' });
+      setWallet(w);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to create wallet');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function exportWallet() {
+    setExportLoading(true); setError(null);
+    try {
+      const data = await adminFetch<{ private_key: string; mnemonic: string }>('/admin/alchemy/wallet/export', { method: 'POST' });
+      setExportData(data);
+      setShowExport(true);
+      setConfirmExport(false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h2 className={`text-lg font-semibold ${t.heading}`}>Site Wallet</h2>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>Platform-managed Ethereum wallet used to deploy contracts and sign transactions via Alchemy.</p>
+      </div>
+
+      {loading ? (
+        <p className={`text-xs ${t.textMuted}`}>Loading…</p>
+      ) : wallet ? (
+        <div className="space-y-4">
+          <div className={`rounded-xl border ${t.border} p-4 space-y-3`} style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.08), rgba(99,102,241,0.05))' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center text-violet-400 text-lg">🔐</div>
+              <div>
+                <p className={`text-xs font-semibold ${t.heading}`}>Site Wallet</p>
+                <p className={`text-[10px] ${t.textMuted}`}>Created {new Date(wallet.created_at).toLocaleDateString()}</p>
+              </div>
+              <span className="ml-auto text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">Active</span>
+            </div>
+            <div>
+              <p className={`text-[10px] ${t.textMuted} mb-1`}>Address</p>
+              <code className={`text-xs font-mono ${t.text} break-all`}>{wallet.address}</code>
+            </div>
+            <p className={`text-[10px] ${t.textMuted}`}>
+              {wallet.has_private_key ? '🔒 Private key stored encrypted (AES-256 Fernet)' : '⚠ No private key stored — import-only wallet'}
+            </p>
+          </div>
+
+          <Section title="Export Keys">
+            <div className={`p-4 rounded-xl border border-red-500/20 bg-red-500/5 space-y-3`}>
+              <div className="flex items-start gap-3">
+                <span className="text-red-400 mt-0.5">⚠</span>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-red-400">Sensitive Operation</p>
+                  <p className={`text-[10px] ${t.textMuted}`}>Exporting private keys exposes them in your browser. Only do this in a secure environment. Never share these keys.</p>
+                </div>
+              </div>
+              {!confirmExport ? (
+                <button
+                  onClick={() => setConfirmExport(true)}
+                  className="px-4 py-2 rounded-lg text-xs font-medium border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  Show Private Keys…
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-red-400 font-medium">Are you sure? This will show your private key in plaintext.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={exportWallet}
+                      disabled={exportLoading}
+                      className="px-4 py-2 rounded-lg text-xs font-medium bg-red-500 hover:bg-red-600 text-white disabled:opacity-40 transition-colors"
+                    >
+                      {exportLoading ? 'Decrypting…' : 'Yes, Export Keys'}
+                    </button>
+                    <button
+                      onClick={() => setConfirmExport(false)}
+                      className={`px-4 py-2 rounded-lg text-xs font-medium border ${t.border} ${t.textMuted} hover:${t.text}`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Section>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className={`rounded-xl border ${t.border} ${t.bgCard} p-6 text-center space-y-3`}>
+            <p className="text-3xl">🪙</p>
+            <p className={`text-sm font-medium ${t.text}`}>No site wallet exists</p>
+            <p className={`text-xs ${t.textMuted}`}>Create a wallet to deploy contracts and sign platform transactions</p>
+            <button
+              onClick={createWallet}
+              disabled={creating}
+              className="px-5 py-2.5 rounded-lg text-sm font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors"
+            >
+              {creating ? 'Creating…' : 'Create Site Wallet'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      {/* Export popup */}
+      <AnimatePresence>
+        {showExport && exportData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => { setShowExport(false); setExportData(null); }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className={`w-full max-w-lg mx-4 rounded-2xl border border-red-500/30 ${t.bg} p-6 space-y-4 shadow-2xl`}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🔑</span>
+                <div>
+                  <p className={`text-sm font-semibold ${t.heading}`}>Wallet Keys — Keep Secret</p>
+                  <p className={`text-[10px] text-red-400`}>Never share these. Close this window when done.</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className={`text-[10px] font-semibold uppercase tracking-widest text-red-400/70 mb-1`}>Private Key</p>
+                  <div className={`p-3 rounded-lg border border-red-500/20 bg-red-500/5 font-mono text-[11px] ${t.text} break-all select-all`}>
+                    {exportData.private_key}
+                  </div>
+                </div>
+                <div>
+                  <p className={`text-[10px] font-semibold uppercase tracking-widest text-red-400/70 mb-1`}>Mnemonic Phrase</p>
+                  <div className={`p-3 rounded-lg border border-red-500/20 bg-red-500/5 font-mono text-[11px] ${t.text} break-all select-all`}>
+                    {exportData.mnemonic || '(not available for imported wallets)'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowExport(false); setExportData(null); }}
+                className="w-full py-2.5 rounded-lg text-xs font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+              >
+                Close & Clear
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Tab: ConnectKit ──────────────────────────────────────────────────────────
+
+const DEFAULT_CONNECTKIT: ConnectKitConfig = {
+  walletconnect_project_id: '', alchemy_id: '', infura_id: '',
+  app_name: 'OnTrail', app_description: 'Web3 SocialFi Running App',
+  app_url: 'https://ontrail.tech', app_icon: 'https://ontrail.tech/logo.png',
+};
+
+function ConnectKitTab({ t }: { t: ReturnType<typeof useTheme> }) {
+  const [cfg, setCfg] = useState<ConnectKitConfig>(DEFAULT_CONNECTKIT);
+  const { save, saving, saved, error } = useSave(async (data: ConnectKitConfig) => {
+    await adminFetch('/admin/alchemy/connectkit', { method: 'PUT', body: JSON.stringify(data) });
+  });
+
+  useEffect(() => {
+    adminFetch<ConnectKitConfig>('/admin/alchemy/connectkit').then(setCfg).catch(() => {});
+  }, []);
+
+  function set(k: keyof ConnectKitConfig, v: string) { setCfg(p => ({ ...p, [k]: v })); }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h2 className={`text-lg font-semibold ${t.heading}`}>ConnectKit Configuration</h2>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>Configure wallet connection providers (WalletConnect, Alchemy, Infura) for the dApp frontend</p>
+      </div>
+
+      <Section title="Provider Keys">
+        <Field label="WalletConnect Project ID" hint="Get from cloud.walletconnect.com">
+          <Input value={cfg.walletconnect_project_id} onChange={v => set('walletconnect_project_id', v)} placeholder="abc123…" type="password" />
+        </Field>
+        <Field label="Alchemy ID" hint="Same key as API Keys tab (used in ConnectKit client config)">
+          <Input value={cfg.alchemy_id} onChange={v => set('alchemy_id', v)} placeholder="alchemy_XXXXXXXXXXXX" type="password" />
+        </Field>
+        <Field label="Infura ID (optional)" hint="Fallback provider">
+          <Input value={cfg.infura_id} onChange={v => set('infura_id', v)} placeholder="abcdef1234567890" type="password" />
+        </Field>
+      </Section>
+
+      <Section title="App Metadata">
+        <Field label="App Name">
+          <Input value={cfg.app_name} onChange={v => set('app_name', v)} placeholder="OnTrail" />
+        </Field>
+        <Field label="App Description">
+          <Input value={cfg.app_description} onChange={v => set('app_description', v)} placeholder="Web3 SocialFi Running App" />
+        </Field>
+        <Field label="App URL">
+          <Input value={cfg.app_url} onChange={v => set('app_url', v)} placeholder="https://ontrail.tech" />
+        </Field>
+        <Field label="App Icon URL">
+          <Input value={cfg.app_icon} onChange={v => set('app_icon', v)} placeholder="https://ontrail.tech/logo.png" />
+        </Field>
+      </Section>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <SaveBtn onClick={() => save(cfg)} saving={saving} saved={saved} label="Save ConnectKit Config" />
+    </div>
+  );
+}
+
+// ─── Tab: Runner Coin ─────────────────────────────────────────────────────────
+
+const DEFAULT_RC: RunnerCoinConfig = {
+  token_name: 'OnTrail Runner', token_symbol: 'ONTR', total_supply: '1000000000',
+  bonding_curve_k: '0.0001', base_price: '0.000001', tge_threshold: '69420',
+  contract_address: '', treasury_address: '',
+};
+
+function RunnerCoinTab({ t }: { t: ReturnType<typeof useTheme> }) {
+  const [cfg, setCfg] = useState<RunnerCoinConfig>(DEFAULT_RC);
+  const { save, saving, saved, error } = useSave(async (data: RunnerCoinConfig) => {
+    await adminFetch('/admin/alchemy/runnercoin', { method: 'PUT', body: JSON.stringify(data) });
+  });
+
+  useEffect(() => {
+    adminFetch<RunnerCoinConfig>('/admin/alchemy/runnercoin').then(setCfg).catch(() => {});
+  }, []);
+
+  function set(k: keyof RunnerCoinConfig, v: string) { setCfg(p => ({ ...p, [k]: v })); }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h2 className={`text-lg font-semibold ${t.heading}`}>Runner Coin (ONTR)</h2>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>Solana SPL token with pump.fun bonding curve. Migrates to Raydium at TGE threshold.</p>
+      </div>
+
+      <Section title="Token Identity">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Token Name">
+            <Input value={cfg.token_name} onChange={v => set('token_name', v)} placeholder="OnTrail Runner" />
+          </Field>
+          <Field label="Symbol">
+            <Input value={cfg.token_symbol} onChange={v => set('token_symbol', v)} placeholder="ONTR" />
+          </Field>
+        </div>
+        <Field label="Total Supply">
+          <Input value={cfg.total_supply} onChange={v => set('total_supply', v)} placeholder="1000000000" />
+        </Field>
+      </Section>
+
+      <Section title="Bonding Curve">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Curve K (slope)" hint="pump.fun: y = k·x²">
+            <Input value={cfg.bonding_curve_k} onChange={v => set('bonding_curve_k', v)} placeholder="0.0001" />
+          </Field>
+          <Field label="Base Price (SOL)" hint="Price at zero supply">
+            <Input value={cfg.base_price} onChange={v => set('base_price', v)} placeholder="0.000001" />
+          </Field>
+        </div>
+        <Field label="TGE Threshold (SOL)" hint="SOL raised to trigger Raydium migration (pump.fun: 69420)">
+          <Input value={cfg.tge_threshold} onChange={v => set('tge_threshold', v)} placeholder="69420" />
+        </Field>
+      </Section>
+
+      <Section title="Deployed Addresses">
+        <Field label="Token Contract Address">
+          <Input value={cfg.contract_address} onChange={v => set('contract_address', v)} placeholder="Solana mint address…" />
+        </Field>
+        <Field label="Treasury Address">
+          <Input value={cfg.treasury_address} onChange={v => set('treasury_address', v)} placeholder="Treasury wallet address…" />
+        </Field>
+      </Section>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <SaveBtn onClick={() => save(cfg)} saving={saving} saved={saved} label="Save Runner Coin Config" />
+    </div>
+  );
+}
+
+// ─── Tab: Mint ────────────────────────────────────────────────────────────────
+
+type MintSubtab = 'access-nft' | 'poi' | 'route' | 'airdrop';
+
+function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
+  const [sub, setSub] = useState<MintSubtab>('access-nft');
+  const [result, setResult] = useState<string | null>(null);
+  const [minting, setMinting] = useState(false);
+
+  // Access NFT fields
+  const [accessTo, setAccessTo] = useState('');
+  const [accessTier, setAccessTier] = useState('runner');
+  const [accessUri, setAccessUri] = useState('');
+
+  // POI fields
+  const [poiTo, setPoiTo] = useState('');
+  const [poiUri, setPoiUri] = useState('');
+  const [poiRarity, setPoiRarity] = useState('common');
+
+  // Route fields
+  const [routeTo, setRouteTo] = useState('');
+  const [routeUri, setRouteUri] = useState('');
+  const [routeDifficulty, setRouteDifficulty] = useState('easy');
+  const [routeDistance, setRouteDistance] = useState('');
+  const [routeElevation, setRouteElevation] = useState('');
+  const [routeGps, setRouteGps] = useState('');
+
+  // Airdrop fields
+  const [airdropAddresses, setAirdropAddresses] = useState('');
+  const [airdropAmount, setAirdropAmount] = useState('1');
+
+  async function mintAccessNft() {
+    setMinting(true); setResult(null);
+    try {
+      const r = await adminFetch<{ tx_hash: string; token_id: string }>('/admin/alchemy/mint/access-nft', {
+        method: 'POST',
+        body: JSON.stringify({ to: accessTo, tier: accessTier, uri: accessUri }),
+      });
+      setResult(`✓ Access NFT minted — Token #${r.token_id} | Tx: ${r.tx_hash}`);
+    } catch (e: unknown) { setResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`); }
+    finally { setMinting(false); }
+  }
+
+  async function mintPoi() {
+    setMinting(true); setResult(null);
+    try {
+      const r = await adminFetch<{ tx_hash: string; token_id: string }>('/admin/alchemy/mint/poi', {
+        method: 'POST',
+        body: JSON.stringify({ to: poiTo, uri: poiUri, rarity: poiRarity }),
+      });
+      setResult(`✓ POI minted — Token #${r.token_id} | Tx: ${r.tx_hash}`);
+    } catch (e: unknown) { setResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`); }
+    finally { setMinting(false); }
+  }
+
+  async function mintRoute() {
+    setMinting(true); setResult(null);
+    try {
+      // Parse GPS from textarea: "lat,lng\nlat,lng\n…"
+      const waypoints: number[] = routeGps.trim().split('\n').flatMap(line => {
+        const [lat, lng] = line.split(',').map(s => Math.round(parseFloat(s.trim()) * 1e6));
+        return [lat, lng];
+      });
+      const r = await adminFetch<{ tx_hash: string; token_id: string }>('/admin/alchemy/mint/route', {
+        method: 'POST',
+        body: JSON.stringify({
+          to: routeTo, uri: routeUri, difficulty: routeDifficulty,
+          distance_meters: parseInt(routeDistance) || 0,
+          elevation_gain_meters: parseInt(routeElevation) || 0,
+          gps_waypoints: waypoints,
+        }),
+      });
+      setResult(`✓ Route minted — Token #${r.token_id} | Tx: ${r.tx_hash} | ${waypoints.length / 2} waypoints`);
+    } catch (e: unknown) { setResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`); }
+    finally { setMinting(false); }
+  }
+
+  async function airdrop() {
+    setMinting(true); setResult(null);
+    try {
+      const addresses = airdropAddresses.split('\n').map(a => a.trim()).filter(Boolean);
+      const r = await adminFetch<{ success: number; failed: number }>('/admin/alchemy/mint/airdrop', {
+        method: 'POST',
+        body: JSON.stringify({ addresses, amount: parseInt(airdropAmount) }),
+      });
+      setResult(`✓ Airdrop complete — ${r.success} success, ${r.failed} failed`);
+    } catch (e: unknown) { setResult(`✗ ${e instanceof Error ? e.message : 'Failed'}`); }
+    finally { setMinting(false); }
+  }
+
+  const subtabs: { id: MintSubtab; label: string }[] = [
+    { id: 'access-nft', label: 'Access NFT' },
+    { id: 'poi', label: 'POI NFT' },
+    { id: 'route', label: 'Route NFT' },
+    { id: 'airdrop', label: 'Airdrop' },
+  ];
+
+  const ACCESS_TIERS = ['runner', 'premium', 'ancient_holder', 'trail_creator', 'nft_holder'];
+  const POI_RARITIES = ['common', 'uncommon', 'rare', 'legendary'];
+  const DIFFICULTIES = ['easy', 'moderate', 'hard', 'ultra'];
+
+  return (
+    <div className="space-y-5 p-6">
+      <div>
+        <h2 className={`text-lg font-semibold ${t.heading}`}>Mint</h2>
+        <p className={`text-xs mt-1 ${t.textMuted}`}>Mint NFTs via site wallet using Alchemy RPC on Base</p>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {subtabs.map(st => (
+          <button key={st.id} onClick={() => { setSub(st.id); setResult(null); }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${sub === st.id ? 'bg-violet-500 text-white border-violet-500' : `${t.bgCard} ${t.border} ${t.textMuted}`}`}>
+            {st.label}
+          </button>
+        ))}
+      </div>
+
+      <AnimatePresence mode="wait">
+        <motion.div key={sub} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.12 }}
+          className="space-y-4">
+
+          {sub === 'access-nft' && (
+            <>
+              <Field label="Recipient Address">
+                <Input value={accessTo} onChange={setAccessTo} placeholder="0x…" />
+              </Field>
+              <Field label="Access Tier">
+                <select value={accessTier} onChange={e => setAccessTier(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`}>
+                  {ACCESS_TIERS.map(tier => <option key={tier} value={tier}>{tier}</option>)}
+                </select>
+              </Field>
+              <Field label="Metadata URI" hint="IPFS/Arweave URI for the NFT metadata">
+                <Input value={accessUri} onChange={setAccessUri} placeholder="ipfs://Qm…" />
+              </Field>
+              <button onClick={mintAccessNft} disabled={minting || !accessTo}
+                className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
+                {minting ? 'Minting…' : 'Mint Access NFT'}
+              </button>
+            </>
+          )}
+
+          {sub === 'poi' && (
+            <>
+              <Field label="Recipient Address">
+                <Input value={poiTo} onChange={setPoiTo} placeholder="0x…" />
+              </Field>
+              <Field label="Metadata URI">
+                <Input value={poiUri} onChange={setPoiUri} placeholder="ipfs://Qm…" />
+              </Field>
+              <Field label="Rarity">
+                <select value={poiRarity} onChange={e => setPoiRarity(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`}>
+                  {POI_RARITIES.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </Field>
+              <button onClick={mintPoi} disabled={minting || !poiTo}
+                className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
+                {minting ? 'Minting…' : 'Mint POI NFT'}
+              </button>
+            </>
+          )}
+
+          {sub === 'route' && (
+            <>
+              <Field label="Recipient Address">
+                <Input value={routeTo} onChange={setRouteTo} placeholder="0x…" />
+              </Field>
+              <Field label="Metadata URI">
+                <Input value={routeUri} onChange={setRouteUri} placeholder="ipfs://Qm…" />
+              </Field>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Difficulty">
+                  <select value={routeDifficulty} onChange={e => setRouteDifficulty(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg text-xs border ${t.border} ${t.bgCard} ${t.text} focus:outline-none focus:ring-1 focus:ring-violet-500/50`}>
+                    {DIFFICULTIES.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </Field>
+                <Field label="Distance (m)">
+                  <Input value={routeDistance} onChange={setRouteDistance} placeholder="5000" />
+                </Field>
+                <Field label="Elevation (m)">
+                  <Input value={routeElevation} onChange={setRouteElevation} placeholder="300" />
+                </Field>
+              </div>
+              <Field label="GPS Waypoints" hint="One coordinate per line: lat,lng (e.g. 59.9139,10.7522)">
+                <Textarea value={routeGps} onChange={setRouteGps} placeholder={"59.9139,10.7522\n59.9200,10.7600\n…"} rows={6} />
+              </Field>
+              <button onClick={mintRoute} disabled={minting || !routeTo}
+                className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
+                {minting ? 'Minting…' : 'Mint Route NFT'}
+              </button>
+            </>
+          )}
+
+          {sub === 'airdrop' && (
+            <>
+              <Field label="Wallet Addresses" hint="One address per line">
+                <Textarea value={airdropAddresses} onChange={setAirdropAddresses} placeholder={"0x…\n0x…\n…"} rows={6} />
+              </Field>
+              <Field label="Amount per wallet">
+                <Input value={airdropAmount} onChange={setAirdropAmount} placeholder="1" />
+              </Field>
+              <button onClick={airdrop} disabled={minting || !airdropAddresses.trim()}
+                className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors">
+                {minting ? 'Airdropping…' : 'Send Airdrop'}
+              </button>
+            </>
+          )}
+        </motion.div>
+      </AnimatePresence>
+
+      {result && (
+        <div className={`px-3 py-2.5 rounded-lg text-xs font-mono ${result.startsWith('✓') ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+          {result}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function AlchemyApp() {
@@ -908,6 +1502,10 @@ export default function AlchemyApp() {
     'chains': <ChainsTab t={t} />,
     'contracts': <ContractsTab t={t} />,
     'access': <AccessTab t={t} />,
+    'wallet': <WalletTab t={t} />,
+    'connectkit': <ConnectKitTab t={t} />,
+    'runnercoin': <RunnerCoinTab t={t} />,
+    'mint': <MintTab t={t} />,
   };
 
   return (

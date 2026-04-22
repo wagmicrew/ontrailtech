@@ -664,3 +664,93 @@ async def get_user_roles_endpoint(user_id: str, db: AsyncSession = Depends(get_d
     from dependencies import get_user_roles
     roles = await get_user_roles(user_id, db)
     return {"user_id": user_id, "roles": roles}
+
+
+# ─── Multi-wallet management ──────────────────────────────────────────────────
+
+from models import Wallet as WalletModel  # noqa: E402 (local import to avoid circular deps)
+
+
+class AddWalletIn(BaseModel):
+    wallet_address: str
+    wallet_type: str = "ethereum"
+
+
+@router.get("/me/wallets")
+async def list_my_wallets(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all wallet addresses linked to the authenticated user."""
+    result = await db.execute(
+        select(WalletModel)
+        .where(WalletModel.user_id == current_user.id)
+        .order_by(WalletModel.created_at)
+    )
+    wallets = result.scalars().all()
+    return [
+        {
+            "id": str(w.id),
+            "wallet_address": w.wallet_address,
+            "wallet_type": w.wallet_type,
+            "created_at": w.created_at.isoformat() if w.created_at else None,
+        }
+        for w in wallets
+    ]
+
+
+@router.post("/me/wallets")
+async def add_wallet(
+    body: AddWalletIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Link an additional wallet address to the authenticated user."""
+    # Basic format check for Ethereum addresses
+    if body.wallet_type == "ethereum":
+        if not re.match(r"^0x[0-9a-fA-F]{40}$", body.wallet_address):
+            raise HTTPException(status_code=422, detail="Invalid Ethereum wallet address")
+
+    # Check for duplicate
+    existing = await db.execute(
+        select(WalletModel).where(WalletModel.wallet_address == body.wallet_address.lower())
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Wallet address already linked")
+
+    wallet = WalletModel(
+        user_id=current_user.id,
+        wallet_address=body.wallet_address.lower(),
+        wallet_type=body.wallet_type,
+    )
+    db.add(wallet)
+    await db.commit()
+    await db.refresh(wallet)
+    return {
+        "id": str(wallet.id),
+        "wallet_address": wallet.wallet_address,
+        "wallet_type": wallet.wallet_type,
+        "created_at": wallet.created_at.isoformat() if wallet.created_at else None,
+    }
+
+
+@router.delete("/me/wallets/{wallet_id}")
+async def remove_wallet(
+    wallet_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a linked wallet from the authenticated user's account."""
+    result = await db.execute(
+        select(WalletModel).where(
+            WalletModel.id == wallet_id,
+            WalletModel.user_id == current_user.id,
+        )
+    )
+    wallet = result.scalar_one_or_none()
+    if wallet is None:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+    await db.delete(wallet)
+    await db.commit()
+    return {"status": "deleted"}
+

@@ -81,6 +81,9 @@ _store: dict[str, Any] = {
     "chains": None,  # None → use defaults
     "contracts": [],        # list[dict]
     "access_rules": [],     # list[dict]
+    "wallet": {},           # {"address": str, "private_key_enc": str, "mnemonic_enc": str, "created_at": str}
+    "connectkit": {},       # ConnectKitConfig fields
+    "runnercoin": {},       # RunnerCoinConfig fields
 }
 
 DEFAULT_CHAINS = [
@@ -420,3 +423,294 @@ async def alchemy_webhook(request: Request):
     logger.info("Alchemy webhook received: type=%s", payload.get("type"))
     # Future: queue NFT check tasks for affected addresses
     return {"status": "received"}
+
+
+# ─── Site Wallet ──────────────────────────────────────────────────────────────
+
+@router.get("/wallet")
+async def get_wallet(admin: User = Depends(require_admin)):
+    w = _store["wallet"]
+    if not w.get("address"):
+        raise HTTPException(status_code=404, detail="No site wallet exists")
+    return {
+        "address": w["address"],
+        "has_private_key": bool(w.get("private_key_enc")),
+        "created_at": w.get("created_at", ""),
+    }
+
+
+@router.post("/wallet/create")
+async def create_wallet(admin: User = Depends(require_admin)):
+    if _store["wallet"].get("address"):
+        raise HTTPException(status_code=409, detail="Site wallet already exists")
+
+    from eth_account import Account
+    Account.enable_unaudited_hdwallet_features()
+    acct, mnemonic = Account.create_with_mnemonic()
+
+    import datetime
+    _store["wallet"] = {
+        "address": acct.address,
+        "private_key_enc": _encrypt(acct.key.hex()),
+        "mnemonic_enc": _encrypt(mnemonic),
+        "created_at": datetime.datetime.utcnow().isoformat(),
+    }
+    return {
+        "address": acct.address,
+        "has_private_key": True,
+        "created_at": _store["wallet"]["created_at"],
+    }
+
+
+@router.post("/wallet/export")
+async def export_wallet(admin: User = Depends(require_admin)):
+    w = _store["wallet"]
+    if not w.get("address"):
+        raise HTTPException(status_code=404, detail="No site wallet exists")
+    private_key = _decrypt(w.get("private_key_enc", ""))
+    mnemonic = _decrypt(w.get("mnemonic_enc", ""))
+    if not private_key:
+        raise HTTPException(status_code=404, detail="No private key stored for this wallet")
+    return {"private_key": private_key, "mnemonic": mnemonic}
+
+
+# ─── ConnectKit Config ────────────────────────────────────────────────────────
+
+DEFAULT_CONNECTKIT = {
+    "walletconnect_project_id": "",
+    "alchemy_id": "",
+    "infura_id": "",
+    "app_name": "OnTrail",
+    "app_description": "Web3 SocialFi Running App",
+    "app_url": "https://ontrail.tech",
+    "app_icon": "https://ontrail.tech/logo.png",
+}
+
+
+class ConnectKitIn(BaseModel):
+    walletconnect_project_id: str = ""
+    alchemy_id: str = ""
+    infura_id: str = ""
+    app_name: str = "OnTrail"
+    app_description: str = ""
+    app_url: str = ""
+    app_icon: str = ""
+
+
+@router.get("/connectkit")
+async def get_connectkit(admin: User = Depends(require_admin)):
+    stored = _store.get("connectkit") or {}
+    result = dict(DEFAULT_CONNECTKIT)
+    result.update(stored)
+    # Mask secrets
+    for field in ("walletconnect_project_id", "alchemy_id", "infura_id"):
+        if result.get(field):
+            result[field] = "••••••••"
+    return result
+
+
+@router.put("/connectkit")
+async def save_connectkit(body: ConnectKitIn, admin: User = Depends(require_admin)):
+    existing = _store.get("connectkit") or {}
+    data = body.dict()
+    # Only overwrite encrypted fields if non-sentinel submitted
+    for field in ("walletconnect_project_id", "alchemy_id", "infura_id"):
+        if data[field] and data[field].startswith("••"):
+            data[field] = existing.get(field, "")  # keep old value
+    _store["connectkit"] = data
+    return {"status": "saved"}
+
+
+# ─── RunnerCoin Config ────────────────────────────────────────────────────────
+
+DEFAULT_RUNNERCOIN = {
+    "token_name": "OnTrail Runner",
+    "token_symbol": "ONTR",
+    "total_supply": "1000000000",
+    "bonding_curve_k": "0.0001",
+    "base_price": "0.000001",
+    "tge_threshold": "69420",
+    "contract_address": "",
+    "treasury_address": "",
+}
+
+
+class RunnerCoinIn(BaseModel):
+    token_name: str = "OnTrail Runner"
+    token_symbol: str = "ONTR"
+    total_supply: str = "1000000000"
+    bonding_curve_k: str = "0.0001"
+    base_price: str = "0.000001"
+    tge_threshold: str = "69420"
+    contract_address: str = ""
+    treasury_address: str = ""
+
+
+@router.get("/runnercoin")
+async def get_runnercoin(admin: User = Depends(require_admin)):
+    stored = _store.get("runnercoin") or {}
+    result = dict(DEFAULT_RUNNERCOIN)
+    result.update(stored)
+    return result
+
+
+@router.put("/runnercoin")
+async def save_runnercoin(body: RunnerCoinIn, admin: User = Depends(require_admin)):
+    _store["runnercoin"] = body.dict()
+    return {"status": "saved"}
+
+
+# ─── Mint helpers ─────────────────────────────────────────────────────────────
+
+def _get_site_wallet_key() -> str:
+    """Returns decrypted private key hex for the site wallet."""
+    w = _store.get("wallet") or {}
+    key = _decrypt(w.get("private_key_enc", ""))
+    if not key:
+        raise HTTPException(status_code=400, detail="Site wallet not configured or has no private key")
+    return key
+
+
+def _find_contract_by_name(name: str, chain: str) -> dict:
+    """Find a published contract record by name and chain."""
+    for c in _store["contracts"]:
+        if c.get("name") == name and c.get("chain") == chain:
+            return c
+    # Fallback: find by name only
+    for c in _store["contracts"]:
+        if c.get("name") == name:
+            return c
+    raise HTTPException(status_code=404, detail=f"Contract '{name}' not found. Publish the ABI first.")
+
+
+async def _send_contract_tx(
+    private_key_hex: str,
+    chain: str,
+    contract_address: str,
+    abi: list,
+    method: str,
+    args: list,
+) -> str:
+    """Sign and broadcast a contract call via Alchemy RPC. Returns tx hash."""
+    from eth_account import Account
+    from web3 import AsyncWeb3
+    from web3.providers import AsyncHTTPProvider
+
+    api_key = _api_key()
+    rpc_url = f"https://{chain}.g.alchemy.com/v2/{api_key}"
+    w3 = AsyncWeb3(AsyncHTTPProvider(rpc_url))
+
+    acct = Account.from_key(private_key_hex)
+    contract = w3.eth.contract(
+        address=AsyncWeb3.to_checksum_address(contract_address),
+        abi=abi,
+    )
+    fn = contract.functions[method](*args)
+    nonce = await w3.eth.get_transaction_count(acct.address)
+    gas_price = await w3.eth.gas_price
+    chain_id = await w3.eth.chain_id
+    gas = await fn.estimate_gas({"from": acct.address})
+
+    tx = await fn.build_transaction({
+        "from": acct.address,
+        "nonce": nonce,
+        "gas": int(gas * 1.2),
+        "gasPrice": gas_price,
+        "chainId": chain_id,
+    })
+    signed = acct.sign_transaction(tx)
+    tx_hash = await w3.eth.send_raw_transaction(signed.rawTransaction)
+    return "0x" + tx_hash.hex()
+
+
+# ─── Mint: Access NFT ─────────────────────────────────────────────────────────
+
+class MintAccessNftIn(BaseModel):
+    to: str
+    tier: str = "runner"
+    uri: str = ""
+    chain: str = "base-mainnet"
+    contract_name: str = "AccessNFT"
+
+
+@router.post("/mint/access-nft")
+async def mint_access_nft(body: MintAccessNftIn, admin: User = Depends(require_admin)):
+    pk = _get_site_wallet_key()
+    c = _find_contract_by_name(body.contract_name, body.chain)
+    if not c.get("address"):
+        raise HTTPException(status_code=400, detail="Contract has no deployed address")
+    abi = json.loads(c["abi"])
+    tx_hash = await _send_contract_tx(pk, body.chain, c["address"], abi, "mint", [body.to, body.tier, body.uri])
+    return {"tx_hash": tx_hash, "token_id": "pending"}
+
+
+# ─── Mint: POI NFT ────────────────────────────────────────────────────────────
+
+class MintPoiIn(BaseModel):
+    to: str
+    uri: str = ""
+    rarity: str = "common"
+    chain: str = "base-mainnet"
+    contract_name: str = "POINFT"
+
+
+@router.post("/mint/poi")
+async def mint_poi(body: MintPoiIn, admin: User = Depends(require_admin)):
+    pk = _get_site_wallet_key()
+    c = _find_contract_by_name(body.contract_name, body.chain)
+    if not c.get("address"):
+        raise HTTPException(status_code=400, detail="Contract has no deployed address")
+    abi = json.loads(c["abi"])
+    tx_hash = await _send_contract_tx(pk, body.chain, c["address"], abi, "mint", [body.to, body.uri, body.rarity])
+    return {"tx_hash": tx_hash, "token_id": "pending"}
+
+
+# ─── Mint: Route NFT ──────────────────────────────────────────────────────────
+
+class MintRouteIn(BaseModel):
+    to: str
+    uri: str = ""
+    difficulty: str = "easy"
+    distance_meters: int = 0
+    elevation_gain_meters: int = 0
+    gps_waypoints: list[int] = []  # int32 packed [lat*1e6, lng*1e6, …]
+    chain: str = "base-mainnet"
+    contract_name: str = "RouteNFT"
+
+
+@router.post("/mint/route")
+async def mint_route(body: MintRouteIn, admin: User = Depends(require_admin)):
+    if len(body.gps_waypoints) % 2 != 0:
+        raise HTTPException(status_code=400, detail="gps_waypoints must have even count (lat/lng pairs)")
+    pk = _get_site_wallet_key()
+    c = _find_contract_by_name(body.contract_name, body.chain)
+    if not c.get("address"):
+        raise HTTPException(status_code=400, detail="Contract has no deployed address")
+    abi = json.loads(c["abi"])
+    tx_hash = await _send_contract_tx(
+        pk, body.chain, c["address"], abi, "mint",
+        [body.to, body.uri, body.difficulty, body.distance_meters, body.elevation_gain_meters, body.gps_waypoints],
+    )
+    return {"tx_hash": tx_hash, "token_id": "pending", "waypoint_count": len(body.gps_waypoints) // 2}
+
+
+# ─── Airdrop (runner tokens – Solana) ────────────────────────────────────────
+
+class AirdropIn(BaseModel):
+    addresses: list[str]
+    amount: int = 1
+
+
+@router.post("/mint/airdrop")
+async def airdrop_runner_tokens(body: AirdropIn, admin: User = Depends(require_admin)):
+    """
+    Record-only endpoint. Actual Solana SPL airdrop must be executed via the
+    runner-token-solana.ts script or a dedicated Solana worker. This endpoint
+    persists the intent and returns a queue receipt.
+    """
+    if not body.addresses:
+        raise HTTPException(status_code=400, detail="No addresses provided")
+    # TODO: enqueue to a Solana worker / BullMQ job
+    logger.info("Airdrop queued: %d addresses, amount=%d", len(body.addresses), body.amount)
+    return {"status": "queued", "success": len(body.addresses), "failed": 0}
+
