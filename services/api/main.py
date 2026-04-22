@@ -62,6 +62,18 @@ async def health():
 
 
 @app.on_event("startup")
+async def preload_alchemy_store():
+    """Load all persisted Alchemy settings from DB into the in-memory store."""
+    try:
+        from routers.alchemy import _store_get, _STORE_KEYS
+        for key in _STORE_KEYS:
+            await _store_get(key)
+        logger.info("Alchemy store preloaded from DB")
+    except Exception:
+        logger.exception("Failed to preload Alchemy store — will lazy-load on first request")
+
+
+@app.on_event("startup")
 async def start_ancient_nft_indexer():
     """Start the Ancient NFT Indexer as a background task."""
     try:

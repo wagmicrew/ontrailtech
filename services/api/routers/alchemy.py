@@ -36,9 +36,9 @@ from pydantic import BaseModel, RootModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
+from database import get_db, AsyncSessionLocal
 from dependencies import require_admin
-from models import User
+from models import User, SiteSetting
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -68,9 +68,13 @@ def _decrypt(token: str) -> str:
         return ""
 
 
-# ─── In-memory store (replace with DB table for production) ──────────────────
-# In production, persist to a dedicated table. For now we use an in-process dict
-# which survives across requests in the same worker process.
+# ─── DB-backed persistent store ───────────────────────────────────────────────
+# All Alchemy settings are stored in the site_settings table under keys like
+# "alchemy:config", "alchemy:chains", etc.  An in-process write-through cache
+# avoids hitting the DB on every request while surviving server restarts.
+
+_DB_PREFIX = "alchemy:"
+_STORE_KEYS = ("config", "chains", "contracts", "access_rules", "wallet", "connectkit", "runnercoin")
 
 _store: dict[str, Any] = {
     "config": {
@@ -78,13 +82,66 @@ _store: dict[str, Any] = {
         "network": "eth-mainnet",
         "webhook_signing_key_enc": "",
     },
-    "chains": None,  # None → use defaults
-    "contracts": [],        # list[dict]
-    "access_rules": [],     # list[dict]
-    "wallet": {},           # {"address": str, "private_key_enc": str, "mnemonic_enc": str, "created_at": str}
-    "connectkit": {},       # ConnectKitConfig fields
-    "runnercoin": {},       # RunnerCoinConfig fields
+    "chains": None,          # None → use defaults
+    "contracts": [],         # list[dict]
+    "access_rules": [],      # list[dict]
+    "wallet": {},            # {"address": str, "private_key_enc": str, …}
+    "connectkit": {},
+    "runnercoin": {},
 }
+_store_loaded: dict[str, bool] = {k: False for k in _STORE_KEYS}
+
+
+async def _db_load(key: str) -> Any | None:
+    """Read one alchemy setting from the DB; returns parsed JSON or None."""
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(SiteSetting).where(SiteSetting.setting_key == f"{_DB_PREFIX}{key}")
+            )
+            row = result.scalar_one_or_none()
+            if row:
+                return json.loads(row.setting_value)
+    except Exception as exc:
+        logger.warning("alchemy _db_load(%s) failed: %s", key, exc)
+    return None
+
+
+async def _db_save(key: str, value: Any) -> None:
+    """Upsert one alchemy setting to the DB."""
+    try:
+        async with AsyncSessionLocal() as db:
+            db_key = f"{_DB_PREFIX}{key}"
+            result = await db.execute(
+                select(SiteSetting).where(SiteSetting.setting_key == db_key)
+            )
+            row = result.scalar_one_or_none()
+            payload = json.dumps(value, default=str)
+            if row:
+                row.setting_value = payload
+            else:
+                db.add(SiteSetting(setting_key=db_key, setting_value=payload))
+            await db.commit()
+    except Exception as exc:
+        logger.error("alchemy _db_save(%s) failed: %s", key, exc)
+
+
+async def _store_get(key: str) -> Any:
+    """Return store value, loading from DB on first access."""
+    if not _store_loaded.get(key):
+        loaded = await _db_load(key)
+        if loaded is not None:
+            _store[key] = loaded
+        _store_loaded[key] = True
+    return _store[key]
+
+
+async def _store_set(key: str, value: Any) -> None:
+    """Update in-memory cache and persist to DB."""
+    _store[key] = value
+    _store_loaded[key] = True
+    await _db_save(key, value)
+
 
 DEFAULT_CHAINS = [
     {"id": "eth-mainnet",      "name": "Ethereum",     "network": "mainnet", "rpc": "https://eth-mainnet.g.alchemy.com/v2/",     "explorer": "https://etherscan.io",             "currency": "ETH", "alchemy_supported": True,  "enabled": True},
@@ -98,13 +155,15 @@ DEFAULT_CHAINS = [
 ]
 
 
-def _api_key() -> str:
-    return _decrypt(_store["config"]["api_key_enc"])
+async def _api_key() -> str:
+    cfg = await _store_get("config")
+    return _decrypt(cfg.get("api_key_enc", ""))
 
 
-def _alchemy_base(network: str | None = None) -> str:
-    net = network or _store["config"].get("network", "eth-mainnet")
-    key = _api_key()
+async def _alchemy_base(network: str | None = None) -> str:
+    cfg = await _store_get("config")
+    net = network or cfg.get("network", "eth-mainnet")
+    key = await _api_key()
     if not key:
         raise HTTPException(status_code=400, detail="Alchemy API key not configured")
     return f"https://{net}.g.alchemy.com/v2/{key}"
@@ -148,9 +207,9 @@ class PatchActive(BaseModel):
 
 @router.get("/config")
 async def get_config(admin: User = Depends(require_admin)):
-    cfg = _store["config"]
+    cfg = await _store_get("config")
     return {
-        "api_key": "••••••••" if cfg["api_key_enc"] else "",
+        "api_key": "••••••••" if cfg.get("api_key_enc") else "",
         "network": cfg.get("network", "eth-mainnet"),
         "webhook_signing_key": "••••••••" if cfg.get("webhook_signing_key_enc") else "",
     }
@@ -158,12 +217,13 @@ async def get_config(admin: User = Depends(require_admin)):
 
 @router.post("/config")
 async def save_config(body: AlchemyConfigIn, admin: User = Depends(require_admin)):
-    _store["config"]["network"] = body.network
-    # Only update encrypted fields if non-sentinel value provided
+    cfg = await _store_get("config")
+    cfg["network"] = body.network
     if body.api_key and not body.api_key.startswith("••"):
-        _store["config"]["api_key_enc"] = _encrypt(body.api_key)
+        cfg["api_key_enc"] = _encrypt(body.api_key)
     if body.webhook_signing_key and not body.webhook_signing_key.startswith("••"):
-        _store["config"]["webhook_signing_key_enc"] = _encrypt(body.webhook_signing_key)
+        cfg["webhook_signing_key_enc"] = _encrypt(body.webhook_signing_key)
+    await _store_set("config", cfg)
     return {"status": "saved"}
 
 
@@ -171,7 +231,7 @@ async def save_config(body: AlchemyConfigIn, admin: User = Depends(require_admin
 
 @router.get("/test")
 async def test_connection(admin: User = Depends(require_admin)):
-    base = _alchemy_base()
+    base = await _alchemy_base()
     payload = {"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(base, json=payload)
@@ -211,8 +271,7 @@ async def nft_for_wallet(
 ):
     if not address:
         raise HTTPException(status_code=400, detail="address required")
-    base = _alchemy_base(chain)
-    url = f"{base}/getNFTsForOwner"
+    base = await _alchemy_base(chain)
     params: dict[str, Any] = {"owner": address, "withMetadata": "true", "pageSize": 20}
     if page_key:
         params["pageKey"] = page_key
@@ -234,7 +293,7 @@ async def nft_for_contract(
 ):
     if not contract:
         raise HTTPException(status_code=400, detail="contract required")
-    base = _alchemy_base(chain)
+    base = await _alchemy_base(chain)
     url = f"{base}/getNFTsForContract"
     params = {"contractAddress": contract, "withMetadata": "true", "limit": 20}
 
@@ -256,7 +315,7 @@ async def get_chains(admin: User = Depends(require_admin)):
 
 @router.post("/chains")
 async def save_chains(body: list[dict], admin: User = Depends(require_admin)):
-    _store["chains"] = body
+    await _store_set("chains", body)
     return {"status": "saved"}
 
 
@@ -285,12 +344,14 @@ async def publish_contract(body: ContractIn, admin: User = Depends(require_admin
         "created_at": __import__("datetime").datetime.utcnow().isoformat(),
     }
     _store["contracts"].insert(0, record)
+    await _store_set("contracts", _store["contracts"])
     return record
 
 
 @router.delete("/contracts/{contract_id}")
 async def delete_contract(contract_id: str, admin: User = Depends(require_admin)):
     _store["contracts"] = [c for c in _store["contracts"] if c["id"] != contract_id]
+    await _store_set("contracts", _store["contracts"])
     return {"status": "deleted"}
 
 
@@ -308,6 +369,7 @@ async def create_access_rule(body: AccessRuleIn, admin: User = Depends(require_a
         **body.dict(),
     }
     _store["access_rules"].insert(0, record)
+    await _store_set("access_rules", _store["access_rules"])
     return record
 
 
@@ -316,6 +378,7 @@ async def patch_access_rule(rule_id: str, body: PatchActive, admin: User = Depen
     for rule in _store["access_rules"]:
         if rule["id"] == rule_id:
             rule["active"] = body.active
+            await _store_set("access_rules", _store["access_rules"])
             return rule
     raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -323,6 +386,7 @@ async def patch_access_rule(rule_id: str, body: PatchActive, admin: User = Depen
 @router.delete("/access-rules/{rule_id}")
 async def delete_access_rule(rule_id: str, admin: User = Depends(require_admin)):
     _store["access_rules"] = [r for r in _store["access_rules"] if r["id"] != rule_id]
+    await _store_set("access_rules", _store["access_rules"])
     return {"status": "deleted"}
 
 
@@ -354,7 +418,7 @@ async def check_nft_access(
     granted: list[str] = []
     errors: list[str] = []
 
-    key = _api_key()
+    key = await _api_key()
     if not key:
         return {"status": "no_api_key", "roles_granted": [], "roles_revoked": []}
 
@@ -407,7 +471,7 @@ async def alchemy_webhook(request: Request):
     """Receive Alchemy Notify webhooks and trigger NFT checks."""
     body = await request.body()
     signature = request.headers.get("x-alchemy-signature", "")
-    signing_key = _decrypt(_store["config"].get("webhook_signing_key_enc", ""))
+    signing_key = _decrypt(_store.get("config", {}).get("webhook_signing_key_enc", ""))
 
     # Verify HMAC-SHA256 signature when a signing key is configured
     if signing_key:
@@ -449,16 +513,17 @@ async def create_wallet(admin: User = Depends(require_admin)):
     acct, mnemonic = Account.create_with_mnemonic()
 
     import datetime
-    _store["wallet"] = {
+    wallet_data = {
         "address": acct.address,
         "private_key_enc": _encrypt(acct.key.hex()),
         "mnemonic_enc": _encrypt(mnemonic),
         "created_at": datetime.datetime.utcnow().isoformat(),
     }
+    await _store_set("wallet", wallet_data)
     return {
         "address": acct.address,
         "has_private_key": True,
-        "created_at": _store["wallet"]["created_at"],
+        "created_at": wallet_data["created_at"],
     }
 
 
@@ -517,7 +582,7 @@ async def save_connectkit(body: ConnectKitIn, admin: User = Depends(require_admi
     for field in ("walletconnect_project_id", "alchemy_id", "infura_id"):
         if data[field] and data[field].startswith("••"):
             data[field] = existing.get(field, "")  # keep old value
-    _store["connectkit"] = data
+    await _store_set("connectkit", data)
     return {"status": "saved"}
 
 
@@ -556,7 +621,7 @@ async def get_runnercoin(admin: User = Depends(require_admin)):
 
 @router.put("/runnercoin")
 async def save_runnercoin(body: RunnerCoinIn, admin: User = Depends(require_admin)):
-    _store["runnercoin"] = body.dict()
+    await _store_set("runnercoin", body.dict())
     return {"status": "saved"}
 
 
@@ -596,7 +661,7 @@ async def _send_contract_tx(
     from web3 import AsyncWeb3
     from web3.providers import AsyncHTTPProvider
 
-    api_key = _api_key()
+    api_key = await _api_key()
     rpc_url = f"https://{chain}.g.alchemy.com/v2/{api_key}"
     w3 = AsyncWeb3(AsyncHTTPProvider(rpc_url))
 
@@ -732,7 +797,7 @@ async def portfolio_tokens(
     """
     if not address:
         raise HTTPException(status_code=400, detail="address required")
-    key = _api_key()
+    key = await _api_key()
     if not key:
         raise HTTPException(status_code=400, detail="Alchemy API key not configured")
 
@@ -779,7 +844,7 @@ class PricesByAddressIn(BaseModel):
 @router.post("/prices/by-symbol")
 async def prices_by_symbol(body: PricesBySymbolIn, admin: User = Depends(require_admin)):
     """Get token prices by symbol using Alchemy Prices API."""
-    key = _api_key()
+    key = await _api_key()
     if not key:
         raise HTTPException(status_code=400, detail="Alchemy API key not configured")
     url = f"https://api.g.alchemy.com/prices/v1/{key}/tokens/by-symbol"
@@ -792,7 +857,7 @@ async def prices_by_symbol(body: PricesBySymbolIn, admin: User = Depends(require
 @router.post("/prices/by-address")
 async def prices_by_address(body: PricesByAddressIn, admin: User = Depends(require_admin)):
     """Get token prices by contract address using Alchemy Prices API."""
-    key = _api_key()
+    key = await _api_key()
     if not key:
         raise HTTPException(status_code=400, detail="Alchemy API key not configured")
     url = f"https://api.g.alchemy.com/prices/v1/{key}/tokens/by-address"
@@ -813,7 +878,7 @@ async def runner_token_price(admin: User = Depends(require_admin)):
     chain = rc.get("launch_chain", "base-mainnet")
 
     if contract and chain in ("eth-mainnet", "base-mainnet", "polygon-mainnet"):
-        key = _api_key()
+        key = await _api_key()
         if key:
             url = f"https://api.g.alchemy.com/prices/v1/{key}/tokens/by-address"
             try:
@@ -856,9 +921,9 @@ class RunnerCoinLaunchIn(BaseModel):
 @router.put("/runnercoin/launch")
 async def save_runner_launch(body: RunnerCoinLaunchIn, admin: User = Depends(require_admin)):
     """Save launch chain, bonding curve lock state, and LP details."""
-    rc = _store.get("runnercoin") or {}
+    rc = dict(_store.get("runnercoin") or {})
     rc.update(body.dict())
-    _store["runnercoin"] = rc
+    await _store_set("runnercoin", rc)
     return {"status": "saved", **body.dict()}
 
 
