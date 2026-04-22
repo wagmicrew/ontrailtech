@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { adminFetch } from '../../core/admin-fetch';
 import { useTheme } from '../../core/theme-store';
 
@@ -58,6 +58,15 @@ interface DeployEstimate {
   gas_price_wei: number;
   max_cost_wei: number;
   max_cost_eth: string;
+}
+
+interface PrebuiltTemplate {
+  name: string;
+  chain: string;
+  abi: string;
+  bytecode: string;
+  constructor_args: unknown[];
+  wallet_address: string;
 }
 
 interface NftAccessRule {
@@ -690,6 +699,8 @@ function ChainsTab({ t }: { t: ReturnType<typeof useTheme> }) {
 // ─── Tab: Contracts / ABI Publisher ──────────────────────────────────────────
 
 function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
+  type AbiEntry = { type?: string; name?: string; stateMutability?: string; inputs?: Array<{ name?: string; type?: string }>; outputs?: Array<{ name?: string; type?: string }> };
+
   const [abis, setAbis] = useState<ContractAbi[]>([]);
   const [prebuilt, setPrebuilt] = useState<PrebuiltContract[]>([]);
   const [loading, setLoading] = useState(true);
@@ -698,16 +709,80 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
   const [prebuiltLoading, setPrebuiltLoading] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<DeployEstimate | null>(null);
   const [form, setForm] = useState({ name: '', address: '', chain: 'base-mainnet', abi: '', bytecode: '' });
+  const [constructorInputs, setConstructorInputs] = useState<Array<{ name: string; type: string }>>([]);
+  const [constructorValues, setConstructorValues] = useState<string[]>([]);
+  const [siteWalletAddress, setSiteWalletAddress] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ContractAbi | null>(null);
+
+  const parsedAbi = useMemo(() => {
+    try {
+      const arr = JSON.parse(form.abi || '[]') as AbiEntry[];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }, [form.abi]);
+
+  const abiActions = useMemo(() => {
+    return parsedAbi.filter((x) => x?.type === 'function' && x?.stateMutability !== 'view' && x?.stateMutability !== 'pure');
+  }, [parsedAbi]);
+
+  useEffect(() => {
+    const ctor = parsedAbi.find((x) => x?.type === 'constructor');
+    const inputs = (ctor?.inputs || []).map((i) => ({ name: i.name || 'arg', type: i.type || 'string' }));
+    setConstructorInputs(inputs);
+    setConstructorValues((prev) => inputs.map((_, idx) => prev[idx] ?? ''));
+  }, [parsedAbi]);
 
   useEffect(() => {
     Promise.all([
       adminFetch<ContractAbi[]>('/admin/alchemy/contracts').then(setAbis).catch(() => {}),
       adminFetch<PrebuiltContract[]>('/admin/alchemy/contracts/prebuilt').then(setPrebuilt).catch(() => {}),
+      adminFetch<SiteWallet>('/admin/alchemy/wallet').then(w => setSiteWalletAddress(w.address || '')).catch(() => setSiteWalletAddress('')),
     ]).finally(() => setLoading(false));
   }, []);
+
+  function parseArg(raw: string, solidityType: string): unknown {
+    const t = solidityType.toLowerCase();
+    if (t.endsWith('[]')) {
+      return raw.split(',').map((x) => x.trim()).filter(Boolean);
+    }
+    if (t.startsWith('uint') || t.startsWith('int')) {
+      return raw.trim() === '' ? '0' : raw.trim();
+    }
+    if (t === 'bool') {
+      return raw.trim().toLowerCase() === 'true';
+    }
+    return raw;
+  }
+
+  function constructorArgsPayload(): unknown[] {
+    return constructorInputs.map((inp, idx) => parseArg(constructorValues[idx] ?? '', inp.type));
+  }
+
+  async function loadPrebuiltTemplate(name: string) {
+    setPrebuiltLoading(name + ':template');
+    setError(null);
+    try {
+      const tpl = await adminFetch<PrebuiltTemplate>(`/admin/alchemy/contracts/prebuilt/template/${name}?chain=${encodeURIComponent(prebuiltChain)}`);
+      setForm({
+        name: tpl.name,
+        chain: tpl.chain,
+        address: '',
+        abi: tpl.abi,
+        bytecode: tpl.bytecode,
+      });
+      const ctorVals = (tpl.constructor_args || []).map((x) => String(x));
+      setConstructorValues(ctorVals);
+      setShowAdd(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load template');
+    } finally {
+      setPrebuiltLoading(null);
+    }
+  }
 
   async function estimatePrebuilt(name: string) {
     setPrebuiltLoading(name);
@@ -763,6 +838,58 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
     }
   }
 
+  async function estimateDraft() {
+    setPublishing(true); setError(null);
+    try {
+      const r = await adminFetch<{ estimate: DeployEstimate }>('/admin/alchemy/contracts/custom/publish', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.name,
+          chain: form.chain,
+          abi: form.abi,
+          bytecode: form.bytecode,
+          deploy: false,
+          constructor_args: constructorArgsPayload(),
+        }),
+      });
+      setEstimate(r.estimate);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Estimate failed');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function deployAndPublishDraft() {
+    setPublishing(true); setError(null);
+    try {
+      const r = await adminFetch<{ record: ContractAbi; estimate: DeployEstimate; deployed?: { tx_hash: string; contract_address: string } }>(
+        '/admin/alchemy/contracts/custom/publish',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name: form.name,
+            chain: form.chain,
+            abi: form.abi,
+            bytecode: form.bytecode,
+            deploy: true,
+            constructor_args: constructorArgsPayload(),
+          }),
+        }
+      );
+      setAbis(prev => [r.record, ...prev]);
+      setEstimate(r.estimate);
+      setForm({ name: '', address: '', chain: 'base-mainnet', abi: '', bytecode: '' });
+      setConstructorInputs([]);
+      setConstructorValues([]);
+      setShowAdd(false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Deploy failed');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   async function deleteAbi(id: string) {
     await adminFetch(`/admin/alchemy/contracts/${id}`, { method: 'DELETE' });
     setAbis(prev => prev.filter(a => a.id !== id));
@@ -778,7 +905,7 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
         <div className="flex items-center justify-between">
           <div>
             <h2 className={`text-lg font-semibold ${t.heading}`}>Contract Publisher</h2>
-            <p className={`text-xs mt-0.5 ${t.textMuted}`}>Publish ABIs and smart contract addresses</p>
+            <p className={`text-xs mt-0.5 ${t.textMuted}`}>Edit contract draft, review actions, then estimate/deploy from site wallet</p>
           </div>
           <button
             onClick={() => setShowAdd(p => !p)}
@@ -793,6 +920,9 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
             <div>
               <p className={`text-xs font-semibold ${t.heading}`}>Prebuilt Contracts</p>
               <p className={`text-[10px] ${t.textMuted}`}>One-click estimate and deploy from server artifacts</p>
+              <p className={`text-[10px] mt-1 ${t.textMuted}`}>
+                Site wallet: {siteWalletAddress ? `${siteWalletAddress.slice(0, 10)}...${siteWalletAddress.slice(-8)}` : 'Not configured'}
+              </p>
             </div>
             <select
               value={prebuiltChain}
@@ -818,6 +948,13 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
                   className={`px-2.5 py-1.5 rounded text-[11px] border ${t.border} ${t.textMuted} hover:text-violet-400 hover:border-violet-400 disabled:opacity-40`}
                 >
                   {prebuiltLoading === p.name ? 'Estimating…' : 'Estimate'}
+                </button>
+                <button
+                  onClick={() => loadPrebuiltTemplate(p.name)}
+                  disabled={!!prebuiltLoading}
+                  className={`px-2.5 py-1.5 rounded text-[11px] border ${t.border} ${t.textMuted} hover:text-violet-400 hover:border-violet-400 disabled:opacity-40`}
+                >
+                  {prebuiltLoading === p.name + ':template' ? 'Loading…' : 'Load to Editor'}
                 </button>
                 <button
                   onClick={() => publishPrebuilt(p.name, false)}
@@ -856,7 +993,7 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
               exit={{ opacity: 0, y: -8 }}
               className={`rounded-xl border ${t.border} ${t.bgCard} p-4 space-y-3`}
             >
-              <p className={`text-xs font-semibold ${t.heading}`}>New Contract</p>
+              <p className={`text-xs font-semibold ${t.heading}`}>Contract Draft Editor</p>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Name">
                   <Input value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} placeholder="RunnerToken" />
@@ -877,14 +1014,65 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
               <Field label="Bytecode (optional, for deployment)">
                 <Textarea value={form.bytecode} onChange={v => setForm(p => ({ ...p, bytecode: v }))} placeholder="0x608060…" rows={3} />
               </Field>
+
+              {constructorInputs.length > 0 && (
+                <Field label="Constructor Inputs" hint="Fill deployment params clearly before posting to chain">
+                  <div className="grid grid-cols-2 gap-2">
+                    {constructorInputs.map((inp, idx) => (
+                      <div key={`${inp.name}-${idx}`}>
+                        <p className={`text-[10px] mb-1 ${t.textMuted}`}>{inp.name || `arg_${idx}`} ({inp.type})</p>
+                        <Input
+                          value={constructorValues[idx] || ''}
+                          onChange={v => setConstructorValues(prev => prev.map((x, i) => (i === idx ? v : x)))}
+                          placeholder={inp.type.endsWith('[]') ? 'comma,separated,values' : 'value'}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </Field>
+              )}
+
+              <Field label="Detected Actions" hint="Writable functions from ABI">
+                <div className={`rounded-lg border ${t.border} p-2 max-h-40 overflow-y-auto`}>
+                  {abiActions.length === 0 ? (
+                    <p className={`text-[11px] ${t.textMuted}`}>No writable actions detected yet.</p>
+                  ) : (
+                    abiActions.map((fn, i) => (
+                      <div key={`${fn.name || 'fn'}-${i}`} className={`text-[11px] ${t.text} py-0.5`}>
+                        <span className="text-violet-400">{fn.name || 'unnamed'}</span>
+                        <span className={`ml-2 ${t.textMuted}`}>
+                          ({(fn.inputs || []).map(inp => `${inp.type || 'any'} ${inp.name || ''}`.trim()).join(', ')})
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </Field>
+
               {error && <p className="text-xs text-red-400">{error}</p>}
-              <button
-                onClick={publish}
-                disabled={publishing || !form.name || !form.abi}
-                className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors"
-              >
-                {publishing ? 'Publishing…' : 'Publish ABI'}
-              </button>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={publish}
+                  disabled={publishing || !form.name || !form.abi}
+                  className="px-4 py-2 rounded-lg text-xs font-medium border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 transition-colors"
+                >
+                  {publishing ? 'Working…' : 'Publish ABI Only'}
+                </button>
+                <button
+                  onClick={estimateDraft}
+                  disabled={publishing || !form.name || !form.abi || !form.bytecode}
+                  className="px-4 py-2 rounded-lg text-xs font-medium border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 disabled:opacity-40 transition-colors"
+                >
+                  {publishing ? 'Working…' : 'Estimate Draft Gas'}
+                </button>
+                <button
+                  onClick={deployAndPublishDraft}
+                  disabled={publishing || !form.name || !form.abi || !form.bytecode}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 transition-colors"
+                >
+                  {publishing ? 'Deploying…' : 'Deploy + Publish Draft'}
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

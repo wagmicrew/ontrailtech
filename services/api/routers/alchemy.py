@@ -199,6 +199,15 @@ class PrebuiltContractActionIn(BaseModel):
     constructor_args: list[Any] = []
 
 
+class CustomContractActionIn(BaseModel):
+    name: str
+    chain: str = "base-mainnet"
+    abi: str
+    bytecode: str
+    deploy: bool = False
+    constructor_args: list[Any] = []
+
+
 class AccessRuleIn(BaseModel):
     name: str
     chain: str = "base-mainnet"
@@ -520,6 +529,21 @@ async def list_prebuilt_contracts(admin: User = Depends(require_admin)):
     return contracts
 
 
+@router.get("/contracts/prebuilt/template/{contract_name}")
+async def get_prebuilt_template(contract_name: str, chain: str = "base-mainnet", admin: User = Depends(require_admin)):
+    wallet = await _store_get("wallet")
+    address = wallet.get("address", "")
+    abi, bytecode = _load_artifact(contract_name)
+    return {
+        "name": contract_name,
+        "chain": chain,
+        "abi": json.dumps(abi),
+        "bytecode": bytecode,
+        "constructor_args": _default_constructor_args(contract_name, address) if address else [],
+        "wallet_address": address,
+    }
+
+
 @router.post("/contracts/prebuilt/estimate")
 async def estimate_prebuilt_contract(body: PrebuiltContractActionIn, admin: User = Depends(require_admin)):
     wallet = await _store_get("wallet")
@@ -560,6 +584,53 @@ async def publish_prebuilt_contract(body: PrebuiltContractActionIn, admin: User 
     record = {
         "id": str(uuid.uuid4()),
         "name": body.contract_name,
+        "address": contract_address,
+        "chain": body.chain,
+        "abi": json.dumps(abi),
+        "bytecode": bytecode,
+        "created_at": __import__("datetime").datetime.utcnow().isoformat(),
+    }
+    _store["contracts"].insert(0, record)
+    await _store_set("contracts", _store["contracts"])
+
+    return {
+        "record": record,
+        "estimate": estimate,
+        "deployed": deployed,
+    }
+
+
+@router.post("/contracts/custom/publish")
+async def publish_custom_contract(body: CustomContractActionIn, admin: User = Depends(require_admin)):
+    wallet = await _store_get("wallet")
+    private_key = _decrypt(wallet.get("private_key_enc", ""))
+    if not private_key:
+        raise HTTPException(status_code=400, detail="Site wallet not configured")
+
+    try:
+        abi = json.loads(body.abi)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid ABI JSON: {exc}")
+    if not isinstance(abi, list):
+        raise HTTPException(status_code=400, detail="ABI must be a JSON array")
+
+    bytecode = (body.bytecode or "").strip()
+    if not bytecode:
+        raise HTTPException(status_code=400, detail="Bytecode is required for deploy/publish draft")
+    if not bytecode.startswith("0x"):
+        bytecode = "0x" + bytecode
+
+    estimate = await _estimate_deploy(private_key, body.chain, abi, bytecode, body.constructor_args or [])
+
+    deployed: dict[str, Any] | None = None
+    contract_address = ""
+    if body.deploy:
+        deployed = await _deploy_prebuilt_contract(private_key, body.chain, abi, bytecode, body.constructor_args or [])
+        contract_address = deployed["contract_address"]
+
+    record = {
+        "id": str(uuid.uuid4()),
+        "name": body.name,
         "address": contract_address,
         "chain": body.chain,
         "abi": json.dumps(abi),
