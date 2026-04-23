@@ -257,6 +257,15 @@ export const api = {
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
 
+  removeAvatar: () =>
+    request<{ message: string }>('/users/me/avatar', { method: 'DELETE' }),
+
+  getMyWallets: () =>
+    request<Array<{ id: string; wallet_address: string; wallet_type: string; created_at: string | null }>>('/users/me/wallets'),
+
+  removeWallet: (walletId: string) =>
+    request<{ status: string }>(`/users/me/wallets/${encodeURIComponent(walletId)}`, { method: 'DELETE' }),
+
   // --- Onboarding endpoints ---
   createProfileWallet: () =>
     request<{ wallet_address: string }>('/onboarding/create-wallet', { method: 'POST' }),

@@ -108,14 +108,43 @@ type AvatarPreset = {
   accent: string;
 };
 
-type TabKey = 'overview' | 'edit' | 'social' | 'store';
+type LinkedWallet = {
+  id: string;
+  wallet_address: string;
+  wallet_type: string;
+  created_at: string | null;
+};
+
+type ColorOverlay = {
+  id: string;
+  label: string;
+  from: string;
+  to: string;
+  angle: number;
+};
+
+type TabKey = 'overview' | 'edit' | 'social' | 'store' | 'wallets';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'edit', label: 'Edit Profile' },
   { key: 'social', label: 'Minted Posts' },
   { key: 'store', label: 'Store' },
+  { key: 'wallets', label: 'Wallets' },
 ];
+
+const COLOR_OVERLAYS: ColorOverlay[] = [
+  { id: 'none',    label: 'Original', from: 'rgba(0,0,0,0)',         to: 'rgba(0,0,0,0)',          angle: 135 },
+  { id: 'sunset',  label: 'Sunset',   from: 'rgba(255,80,0,0.42)',   to: 'rgba(220,0,100,0.38)',   angle: 135 },
+  { id: 'ocean',   label: 'Ocean',    from: 'rgba(0,100,220,0.42)',  to: 'rgba(0,210,200,0.35)',   angle: 135 },
+  { id: 'forest',  label: 'Forest',   from: 'rgba(0,155,70,0.40)',   to: 'rgba(0,50,20,0.32)',     angle: 135 },
+  { id: 'neon',    label: 'Neon',     from: 'rgba(110,0,255,0.38)',  to: 'rgba(0,255,190,0.32)',   angle: 135 },
+  { id: 'ember',   label: 'Ember',    from: 'rgba(255,50,0,0.44)',   to: 'rgba(255,210,0,0.28)',   angle: 135 },
+  { id: 'silver',  label: 'Silver',   from: 'rgba(180,210,240,0.38)', to: 'rgba(80,100,130,0.32)',  angle: 135 },
+  { id: 'rose',    label: 'Rose',     from: 'rgba(240,30,130,0.38)', to: 'rgba(255,150,80,0.30)',  angle: 135 },
+];
+
+const IPFS_JWT_KEY = 'ontrail_ipfs_jwt';
 
 const AVATAR_PRESETS: AvatarPreset[] = [
   { id: 'aurora', label: 'Aurora', gradient: ['#0f172a', '#0ea5e9', '#34d399'], accent: 'from-sky-500 to-emerald-400' },
@@ -241,6 +270,9 @@ export default function Profile() {
   const [selectingAvatarId, setSelectingAvatarId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [wallets, setWallets] = useState<LinkedWallet[]>([]);
+  const [walletsLoading, setWalletsLoading] = useState(false);
+  const [removingAvatarLoading, setRemovingAvatarLoading] = useState(false);
 
   const publicDomain = useMemo(() => {
     const currentUsername = viewingPublicRunner ? runner?.username : me?.username;
@@ -457,6 +489,57 @@ export default function Profile() {
     }
   }
 
+  async function handleRemoveAvatar() {
+    setRemovingAvatarLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.removeAvatar();
+      await reloadOwnProfile('Avatar removed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove avatar');
+    } finally {
+      setRemovingAvatarLoading(false);
+    }
+  }
+
+  async function loadWallets() {
+    setWalletsLoading(true);
+    try {
+      const list = await api.getMyWallets();
+      setWallets(list);
+    } catch {
+      // silently ignore; wallets panel will show empty state
+    } finally {
+      setWalletsLoading(false);
+    }
+  }
+
+  async function handleRemoveWallet(walletId: string) {
+    try {
+      await api.removeWallet(walletId);
+      setWallets((prev) => prev.filter((w) => w.id !== walletId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove wallet');
+    }
+  }
+
+  async function handleAddWallet(address: string, signature: string, message: string) {
+    try {
+      await api.authConnectWallet(address, signature, message);
+      await loadWallets();
+      setNotice('Wallet verified and linked to your account');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not link wallet');
+    }
+  }
+
+  useEffect(() => {
+    if (isConnected && tab === 'wallets') {
+      loadWallets();
+    }
+  }, [isConnected, tab]);
+
   async function handleMintPost() {
     if (!me) return;
 
@@ -604,11 +687,13 @@ export default function Profile() {
             uploadingProfile={uploadingProfile}
             uploadingHeader={uploadingHeader}
             selectingAvatarId={selectingAvatarId}
+            removingAvatar={removingAvatarLoading}
             onChange={setForm}
             onSave={handleSaveProfile}
             onProfileImageSelect={handleProfileImageSelected}
             onUpload={handleUpload}
             onSelectAvatar={handleAvatarPresetSelect}
+            onRemoveAvatar={handleRemoveAvatar}
           />
         )}
 
@@ -630,6 +715,15 @@ export default function Profile() {
             catalog={catalog}
             purchasingSlug={purchasingSlug}
             onPurchase={handlePurchase}
+          />
+        )}
+
+        {tab === 'wallets' && (
+          <WalletManagerPanel
+            wallets={wallets}
+            loading={walletsLoading}
+            onAdd={handleAddWallet}
+            onRemove={handleRemoveWallet}
           />
         )}
       </div>
@@ -862,11 +956,13 @@ function EditPanel({
   uploadingProfile,
   uploadingHeader,
   selectingAvatarId,
+  removingAvatar,
   onChange,
   onSave,
   onProfileImageSelect,
   onUpload,
   onSelectAvatar,
+  onRemoveAvatar,
 }: {
   form: ProfileFormState;
   me: AuthUser;
@@ -874,11 +970,13 @@ function EditPanel({
   uploadingProfile: boolean;
   uploadingHeader: boolean;
   selectingAvatarId: string | null;
+  removingAvatar: boolean;
   onChange: Dispatch<SetStateAction<ProfileFormState>>;
   onSave: () => Promise<void>;
   onProfileImageSelect: (file: File | null) => void;
   onUpload: (file: File | null, type: 'profile' | 'header') => Promise<void>;
   onSelectAvatar: (preset: AvatarPreset) => Promise<void>;
+  onRemoveAvatar: () => Promise<void>;
 }) {
   return (
     <div className="space-y-6">
@@ -938,10 +1036,11 @@ function EditPanel({
           <div className="space-y-6">
             <UploadCard
               title="Profile image"
-              description={`Square crop before upload. Remaining paid changes: ${me.profile_image_upload_credits || 0}`}
+              description={`Square crop before upload. Color overlays available in the editor. Remaining paid changes: ${me.profile_image_upload_credits || 0}`}
               imageUrl={me.avatar_url || null}
-              loading={uploadingProfile}
+              loading={uploadingProfile || removingAvatar}
               onFile={onProfileImageSelect}
+              onRemove={me.avatar_url ? onRemoveAvatar : undefined}
             />
 
             <UploadCard
@@ -952,6 +1051,8 @@ function EditPanel({
               onFile={(file) => onUpload(file, 'header')}
               banner
             />
+
+            <IpfsSettingsSection avatarUrl={me.avatar_url} />
           </div>
         </Panel>
       </div>
@@ -1402,6 +1503,115 @@ function MiniFeedPanel({ posts, profileName }: { posts: MintedPost[]; profileNam
   );
 }
 
+function IpfsSettingsSection({ avatarUrl }: { avatarUrl: string | null }) {
+  const [jwt, setJwt] = useState(() => localStorage.getItem(IPFS_JWT_KEY) || '');
+  const [editing, setEditing] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [cid, setCid] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  function saveJwt() {
+    const trimmed = jwt.trim();
+    if (trimmed) {
+      localStorage.setItem(IPFS_JWT_KEY, trimmed);
+    } else {
+      localStorage.removeItem(IPFS_JWT_KEY);
+    }
+    setEditing(false);
+  }
+
+  async function pinToIpfs() {
+    const storedJwt = localStorage.getItem(IPFS_JWT_KEY);
+    if (!storedJwt) { setEditing(true); return; }
+    if (!avatarUrl) { setErr('No avatar uploaded yet'); return; }
+
+    setPinning(true);
+    setErr(null);
+    setCid(null);
+    try {
+      const resp = await fetch(avatarUrl);
+      if (!resp.ok) throw new Error('Could not fetch avatar image');
+      const blob = await resp.blob();
+      const fd = new FormData();
+      fd.append('file', new File([blob], 'avatar.png', { type: blob.type || 'image/png' }));
+      fd.append('pinataOptions', JSON.stringify({ cidVersion: 1 }));
+
+      const pinResp = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${storedJwt}` },
+        body: fd,
+      });
+      if (!pinResp.ok) {
+        const detail = await pinResp.json().catch(() => ({ error: pinResp.statusText }));
+        throw new Error(detail?.error || 'Pinata error');
+      }
+      const data = await pinResp.json();
+      setCid(data.IpfsHash as string);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'IPFS pin failed');
+    } finally {
+      setPinning(false);
+    }
+  }
+
+  const storedJwt = typeof window !== 'undefined' ? localStorage.getItem(IPFS_JWT_KEY) : null;
+
+  return (
+    <div className="rounded-[28px] border border-slate-200 bg-white/80 p-4 backdrop-blur">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-bold text-slate-900">IPFS settings</h4>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {storedJwt ? 'Pinata JWT saved — pin your avatar to IPFS for permanent hosting.' : 'Add a free Pinata JWT to enable IPFS avatar pinning.'}
+          </p>
+        </div>
+        <button
+          onClick={() => setEditing((v) => !v)}
+          className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+        >
+          {editing ? 'Close' : storedJwt ? 'Update key' : 'Set up'}
+        </button>
+      </div>
+
+      {editing && (
+        <div className="mt-3 flex gap-2">
+          <input
+            type="password"
+            value={jwt}
+            onChange={(e) => setJwt(e.target.value)}
+            placeholder="Pinata JWT (eyJ…)"
+            className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+          />
+          <button onClick={saveJwt} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">Save</button>
+        </div>
+      )}
+
+      {storedJwt && avatarUrl && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={pinToIpfs}
+            disabled={pinning}
+            className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+          >
+            {pinning ? 'Pinning…' : 'Pin avatar to IPFS'}
+          </button>
+          {cid && (
+            <a
+              href={`https://gateway.pinata.cloud/ipfs/${cid}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              {cid.slice(0, 12)}… (view)
+            </a>
+          )}
+          {err && <span className="text-xs text-rose-600">{err}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WalletCard({ me, publicDomain }: { me: AuthUser | null; publicDomain: string }) {
   return (
     <Panel title="Identity and wallet" eyebrow="Owner status and delivery path">
@@ -1411,6 +1621,184 @@ function WalletCard({ me, publicDomain }: { me: AuthUser | null; publicDomain: s
         <StatTile label="AI avatar credits" value={`${me?.ai_avatar_credits || 0}`} />
       </div>
     </Panel>
+  );
+}
+
+function WalletManagerPanel({
+  wallets,
+  loading,
+  onAdd,
+  onRemove,
+}: {
+  wallets: LinkedWallet[];
+  loading: boolean;
+  onAdd: (address: string, signature: string, message: string) => Promise<void>;
+  onRemove: (walletId: string) => Promise<void>;
+}) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [inputAddress, setInputAddress] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  async function detectMetaMaskAddress() {
+    const eth = (window as any).ethereum;
+    if (!eth) { setAddError('MetaMask not found. Install it or enter an address manually.'); return; }
+    try {
+      const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' });
+      if (accounts[0]) setInputAddress(accounts[0]);
+    } catch {
+      setAddError('MetaMask request cancelled');
+    }
+  }
+
+  async function handleSignAndAdd() {
+    const address = inputAddress.trim().toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(address)) {
+      setAddError('Enter a valid 0x Ethereum address');
+      return;
+    }
+    const eth = (window as any).ethereum;
+    if (!eth) {
+      setAddError('MetaMask is required to sign the ownership proof. Install MetaMask and try again.');
+      return;
+    }
+
+    setAdding(true);
+    setAddError(null);
+    try {
+      const timestamp = new Date().toISOString();
+      const message = `I own this wallet on OnTrail\nAddress: ${address}\nTimestamp: ${timestamp}`;
+
+      let accounts: string[] = await eth.request({ method: 'eth_requestAccounts' });
+      if (!accounts.length) throw new Error('No accounts in MetaMask');
+
+      const checksumAddress = accounts.find((a) => a.toLowerCase() === address) ?? accounts[0];
+      if (checksumAddress.toLowerCase() !== address) {
+        throw new Error(`Switch to ${address} in MetaMask and try again`);
+      }
+
+      const signature: string = await eth.request({
+        method: 'personal_sign',
+        params: [message, checksumAddress],
+      });
+
+      await onAdd(address, signature, message);
+      setInputAddress('');
+      setShowAddForm(false);
+    } catch (e) {
+      setAddError(e instanceof Error ? e.message : 'Could not sign message');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleRemove(walletId: string) {
+    if (!window.confirm('Remove this wallet from your account?')) return;
+    setRemovingId(walletId);
+    try {
+      await onRemove(walletId);
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Panel title="Linked wallets" eyebrow="Your verified on-chain identities">
+        {loading ? (
+          <div className="flex items-center gap-3 text-slate-500">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+            <span className="text-sm">Loading wallets…</span>
+          </div>
+        ) : wallets.length === 0 ? (
+          <p className="text-sm text-slate-500">No wallets linked yet. Add one below to prove ownership with a signature.</p>
+        ) : (
+          <div className="space-y-3">
+            {wallets.map((w) => (
+              <div key={w.id} className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="truncate font-mono text-sm font-semibold text-slate-900">{w.wallet_address}</p>
+                  <p className="mt-0.5 text-xs text-slate-500 uppercase tracking-wide">{w.wallet_type} {w.created_at ? `· added ${new Date(w.created_at).toLocaleDateString()}` : ''}</p>
+                </div>
+                <button
+                  onClick={() => handleRemove(w.id)}
+                  disabled={removingId === w.id}
+                  className="flex-shrink-0 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 disabled:opacity-60"
+                >
+                  {removingId === w.id ? 'Removing…' : 'Remove'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-5">
+          {!showAddForm ? (
+            <button
+              onClick={() => { setShowAddForm(true); setAddError(null); }}
+              className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700"
+            >
+              + Add wallet
+            </button>
+          ) : (
+            <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Add and verify a wallet</p>
+                <p className="mt-1 text-xs text-slate-500">You must sign a message in MetaMask to prove ownership. The message and signature are verified server-side.</p>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  value={inputAddress}
+                  onChange={(e) => setInputAddress(e.target.value)}
+                  placeholder="0x wallet address"
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                />
+                <button
+                  onClick={detectMetaMaskAddress}
+                  className="flex-shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  title="Use MetaMask address"
+                >
+                  Use MetaMask
+                </button>
+              </div>
+
+              {addError && <p className="text-xs text-rose-600">{addError}</p>}
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                <strong>Ownership message you'll sign:</strong><br />
+                <span className="font-mono">I own this wallet on OnTrail<br />Address: {inputAddress || '0x…'}<br />Timestamp: {new Date().toISOString().slice(0, 19)}Z</span>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowAddForm(false); setAddError(null); setInputAddress(''); }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSignAndAdd}
+                  disabled={adding || !inputAddress.trim()}
+                  className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {adding ? 'Signing…' : 'Sign & verify ownership'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <Panel title="What are linked wallets?" eyebrow="How it works">
+        <div className="space-y-3 text-sm text-slate-600">
+          <p>Linking a wallet to your account proves you control that address without giving OnTrail access to your funds or private key.</p>
+          <p>When you click <strong>Sign &amp; verify ownership</strong>, MetaMask will show you a plain-text message to sign. The signature is verified on our server — it's cryptographically impossible to fake.</p>
+          <p>Linked wallets appear as your verified on-chain identities and can be used for reward delivery, FriendPass access, and future NFT claims.</p>
+        </div>
+      </Panel>
+    </div>
   );
 }
 
@@ -1465,7 +1853,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function UploadCard({ title, description, imageUrl, loading, onFile, banner }: { title: string; description: string; imageUrl: string | null; loading: boolean; onFile: (file: File | null) => void; banner?: boolean }) {
+function UploadCard({ title, description, imageUrl, loading, onFile, onRemove, banner }: { title: string; description: string; imageUrl: string | null; loading: boolean; onFile: (file: File | null) => void; onRemove?: () => void; banner?: boolean }) {
   return (
     <div className="rounded-3xl border border-white/70 bg-white/70 p-4 backdrop-blur">
       <div className="mb-3">
@@ -1475,20 +1863,31 @@ function UploadCard({ title, description, imageUrl, loading, onFile, banner }: {
       <div className={`mb-4 overflow-hidden rounded-2xl bg-slate-100 ${banner ? 'aspect-[16/5]' : 'aspect-square max-w-[180px]'}`}>
         {imageUrl ? <img src={imageUrl} alt={title} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-slate-500">No image uploaded</div>}
       </div>
-      <label className="inline-flex cursor-pointer rounded-2xl border border-white/80 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white">
-        {loading ? 'Uploading...' : 'Choose image'}
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0] || null;
-            onFile(file);
-            event.target.value = '';
-          }}
-          disabled={loading}
-        />
-      </label>
+      <div className="flex flex-wrap gap-2">
+        <label className="inline-flex cursor-pointer rounded-2xl border border-white/80 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white">
+          {loading ? 'Uploading...' : 'Choose image'}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              onFile(file);
+              event.target.value = '';
+            }}
+            disabled={loading}
+          />
+        </label>
+        {onRemove && imageUrl && (
+          <button
+            onClick={onRemove}
+            disabled={loading}
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? '...' : 'Remove'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1510,6 +1909,9 @@ function ProfileImageCropModal({
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState<CropPosition>({ x: 0, y: 0 });
   const [submitting, setSubmitting] = useState(false);
+  const [overlayId, setOverlayId] = useState<string>('none');
+
+  const selectedOverlay = COLOR_OVERLAYS.find((o) => o.id === overlayId) ?? COLOR_OVERLAYS[0];
 
   const baseScale = useMemo(() => {
     if (!naturalSize) return 1;
@@ -1573,6 +1975,24 @@ function ProfileImageCropModal({
         canvas.width,
         canvas.height,
       );
+
+      // Apply color overlay if one is selected
+      if (selectedOverlay.id !== 'none') {
+        const rad = (selectedOverlay.angle * Math.PI) / 180;
+        const gx = Math.cos(rad);
+        const gy = Math.sin(rad);
+        const grad = context.createLinearGradient(
+          (1 - gx) * outputSize / 2,
+          (1 - gy) * outputSize / 2,
+          (1 + gx) * outputSize / 2,
+          (1 + gy) * outputSize / 2,
+        );
+        grad.addColorStop(0, selectedOverlay.from);
+        grad.addColorStop(1, selectedOverlay.to);
+        context.globalCompositeOperation = 'source-over';
+        context.fillStyle = grad;
+        context.fillRect(0, 0, outputSize, outputSize);
+      }
 
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob(resolve, 'image/png', 0.92);
@@ -1688,7 +2108,7 @@ function ProfileImageCropModal({
           <div className="w-full max-w-sm rounded-[28px] bg-slate-50 p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Preview</p>
             <div className="mt-4 flex justify-center">
-              <div className="h-32 w-32 overflow-hidden rounded-full ring-4 ring-white shadow-lg">
+              <div className="relative h-32 w-32 overflow-hidden rounded-full ring-4 ring-white shadow-lg">
                 <img
                   src={draft.previewUrl}
                   alt="Avatar preview"
@@ -1701,15 +2121,37 @@ function ProfileImageCropModal({
                     transform: `translate(${position.x}px, ${position.y}px)`,
                   }}
                 />
+                {selectedOverlay.id !== 'none' && (
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-full"
+                    style={{ background: `linear-gradient(${selectedOverlay.angle}deg, ${selectedOverlay.from}, ${selectedOverlay.to})` }}
+                  />
+                )}
               </div>
             </div>
 
-            <div className="mt-6 space-y-3 text-sm text-slate-500">
-              <p>The cropped image is exported as a square PNG and displayed as a circular avatar throughout the app.</p>
-              <p>Uploaded avatars are stored under a stable public account path so the current image URL remains tied to the account.</p>
+            <div className="mt-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Color overlay</p>
+              <div className="grid grid-cols-4 gap-2">
+                {COLOR_OVERLAYS.map((ov) => (
+                  <button
+                    key={ov.id}
+                    title={ov.label}
+                    onClick={() => setOverlayId(ov.id)}
+                    className={`relative h-9 overflow-hidden rounded-xl border-2 transition ${overlayId === ov.id ? 'border-emerald-500 ring-2 ring-emerald-300' : 'border-transparent hover:border-slate-300'}`}
+                    style={{ background: ov.id === 'none' ? 'repeating-conic-gradient(#e2e8f0 0% 25%, white 0% 50%) 0 0 / 10px 10px' : `linear-gradient(${ov.angle}deg, ${ov.from.replace(/,[\d.]+\)$/, ',0.9)')}, ${ov.to.replace(/,[\d.]+\)$/, ',0.8)')})` }}
+                  >
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-black/30 px-1 py-0.5 text-center text-[9px] font-semibold text-white">{ov.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-5 space-y-2 text-sm text-slate-500">
+              <p>Drag to reposition. Overlay is baked into the exported PNG.</p>
+            </div>
+
+            <div className="mt-5 flex gap-3">
               <button
                 onClick={onCancel}
                 disabled={loading || submitting}

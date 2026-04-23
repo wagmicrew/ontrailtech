@@ -411,6 +411,18 @@ async def update_avatar(
     return {"avatar_url": user.avatar_url}
 
 
+@router.delete("/me/avatar")
+async def remove_avatar(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove the authenticated user's uploaded avatar (resets to default)."""
+    user.avatar_url = None
+    await db.flush()
+    await _invalidate_runner_cache(user)
+    return {"message": "Avatar removed"}
+
+
 @router.post("/me/media/profile-image")
 async def upload_profile_image(
     image: UploadFile = File(...),

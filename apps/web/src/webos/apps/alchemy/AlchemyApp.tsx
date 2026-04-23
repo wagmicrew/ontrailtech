@@ -920,8 +920,17 @@ function ContractsTab({ t }: { t: ReturnType<typeof useTheme> }) {
             <div>
               <p className={`text-xs font-semibold ${t.heading}`}>Prebuilt Contracts</p>
               <p className={`text-[10px] ${t.textMuted}`}>One-click estimate and deploy from server artifacts</p>
-              <p className={`text-[10px] mt-1 ${t.textMuted}`}>
-                Site wallet: {siteWalletAddress ? `${siteWalletAddress.slice(0, 10)}...${siteWalletAddress.slice(-8)}` : 'Not configured'}
+              <p className={`text-[10px] mt-1 ${t.textMuted} flex items-center gap-1.5`}>
+                Site wallet: {siteWalletAddress ? (
+                  <>
+                    <span className="font-mono">{siteWalletAddress.slice(0, 10)}...{siteWalletAddress.slice(-8)}</span>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(siteWalletAddress)}
+                      title="Copy full address"
+                      className="px-1.5 py-0.5 rounded text-[10px] border border-violet-500/30 text-violet-400 hover:bg-violet-500/10 transition-colors"
+                    >⎘</button>
+                  </>
+                ) : 'Not configured'}
               </p>
             </div>
             <select
@@ -1345,6 +1354,14 @@ function WalletTab({ t }: { t: ReturnType<typeof useTheme> }) {
   const [showExport, setShowExport] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [confirmExport, setConfirmExport] = useState(false);
+  const [addrCopied, setAddrCopied] = useState(false);
+
+  function copyAddress(addr: string) {
+    navigator.clipboard.writeText(addr).then(() => {
+      setAddrCopied(true);
+      setTimeout(() => setAddrCopied(false), 2000);
+    });
+  }
 
   useEffect(() => {
     adminFetch<SiteWallet>('/admin/alchemy/wallet')
@@ -1401,7 +1418,20 @@ function WalletTab({ t }: { t: ReturnType<typeof useTheme> }) {
             </div>
             <div>
               <p className={`text-[10px] ${t.textMuted} mb-1`}>Address</p>
-              <code className={`text-xs font-mono ${t.text} break-all`}>{wallet.address}</code>
+              <div className="flex items-start gap-2">
+                <code className={`text-xs font-mono ${t.text} break-all flex-1`}>{wallet.address}</code>
+                <button
+                  onClick={() => copyAddress(wallet.address)}
+                  title="Copy address"
+                  className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-medium border transition-colors ${
+                    addrCopied
+                      ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                      : `${t.border} ${t.bgCard} ${t.textMuted} hover:text-violet-400 hover:border-violet-500/40`
+                  }`}
+                >
+                  {addrCopied ? '✓ Copied' : '⎘ Copy'}
+                </button>
+              </div>
             </div>
             <p className={`text-[10px] ${t.textMuted}`}>
               {wallet.has_private_key ? '🔒 Private key stored encrypted (AES-256 Fernet)' : '⚠ No private key stored — import-only wallet'}
@@ -2107,7 +2137,16 @@ function MintTab({ t }: { t: ReturnType<typeof useTheme> }) {
         <h2 className={`text-lg font-semibold ${t.heading}`}>Mint</h2>
         <p className={`text-xs mt-1 ${t.textMuted}`}>
           Mint NFTs via site wallet using Alchemy RPC
-          {siteWallet && <span className="ml-2 text-violet-400 font-mono">{siteWallet.slice(0, 8)}…{siteWallet.slice(-6)}</span>}
+          {siteWallet && (
+            <>
+              <span className="ml-2 text-violet-400 font-mono">{siteWallet.slice(0, 8)}…{siteWallet.slice(-6)}</span>
+              <button
+                onClick={() => navigator.clipboard.writeText(siteWallet)}
+                title="Copy wallet address"
+                className="ml-1 px-1.5 py-0.5 rounded text-[10px] border border-violet-500/30 text-violet-400 hover:bg-violet-500/10 transition-colors"
+              >⎘</button>
+            </>
+          )}
         </p>
       </div>
 
