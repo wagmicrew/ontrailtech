@@ -4,7 +4,7 @@
 
 $TTL 3600
 @   IN  SOA ns1.loppio.se. admin.ontrail.tech. (
-        2026032702  ; Serial (YYYYMMDDNN)
+        2026042301  ; Serial (YYYYMMDDNN)
         3600        ; Refresh
         900         ; Retry
         604800      ; Expire
@@ -24,6 +24,8 @@ expo    IN  A   85.208.51.194
 data    IN  A   85.208.51.194
 mail    IN  A   85.208.51.194
 smtp    IN  A   85.208.51.194
+imap    IN  A   85.208.51.194
+pop3    IN  A   85.208.51.194
 
 ; Wildcard for dynamic runner subdomains
 *       IN  A   85.208.51.194
