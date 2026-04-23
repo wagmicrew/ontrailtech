@@ -399,6 +399,22 @@ async def update_me_profile(
     return await get_me(user=user, db=db)
 
 
+@router.post("/me/activate-runner")
+async def activate_runner_profile(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Mark the authenticated user as an active runner (sets onboarding_completed=True).
+    Useful for admin accounts that skipped the onboarding flow but still want a
+    public runner profile, token pool, FriendPass, etc.
+    """
+    user.onboarding_completed = True
+    await db.flush()
+    await _invalidate_runner_cache(user)
+    return {"message": "Runner profile activated", "username": user.username}
+
+
 @router.post("/me/avatar")
 async def update_avatar(
     req: AvatarRequest,
@@ -774,8 +790,20 @@ async def get_user_leaderboard(
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
-    """Return top runners by reputation score, optionally filtered by username prefix."""
-    query = select(User).where(User.onboarding_completed == True)
+    """Return top runners by reputation score, optionally filtered by username prefix.
+    Includes both onboarded users and users with admin/ancient_owner roles.
+    """
+    # Sub-query: user IDs that have admin or ancient_owner roles
+    from models import UserRole, ACLRole
+    admin_ids_sq = (
+        select(UserRole.user_id)
+        .join(ACLRole, UserRole.role_id == ACLRole.id)
+        .where(ACLRole.role_name.in_(["admin", "ancient_owner"]))
+        .scalar_subquery()
+    )
+    query = select(User).where(
+        (User.onboarding_completed == True) | (User.id.in_(admin_ids_sq))
+    )
     if q:
         query = query.where(User.username.ilike(f"%{q}%"))
     query = query.order_by(User.reputation_score.desc()).limit(min(limit, 100))

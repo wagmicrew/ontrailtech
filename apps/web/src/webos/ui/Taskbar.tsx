@@ -6,13 +6,27 @@ import { taskbarClass, taskbarText } from '../core/theme-store';
 import { useState } from 'react';
 import TaskbarClock from './TaskbarClock';
 import NotificationPopup from './NotificationPopup';
+import { useAuth } from '../../context/AuthContext';
+import { api } from '../../lib/api';
 
 export default function Taskbar() {
   const wmSnap = useSnapshot(wmStore);
   const sysSnap = useSnapshot(systemStore);
   const { osTheme } = useSnapshot(windowPrefsStore);
+  const { username, isConnected } = useAuth();
   const [showNotifs, setShowNotifs] = useState(false);
+  const [activating, setActivating] = useState(false);
   const isLight = osTheme === 'light';
+
+  const handleOpenMyProfile = async () => {
+    if (!username) return;
+    // Activate runner status first (idempotent), then open profile
+    if (!activating) {
+      setActivating(true);
+      try { await api.activateRunner(); } catch { /* already active */ } finally { setActivating(false); }
+    }
+    openWindow('runner-profile', 'Runner Profile', '👤', { username });
+  };
 
   return (
     <div className={`fixed bottom-0 left-0 right-0 h-10 flex items-center px-2 gap-1 z-[8000] ${taskbarClass[osTheme]}`}>
@@ -56,6 +70,19 @@ export default function Taskbar() {
           );
         })}
       </div>
+
+      {/* My Runner Profile quick-launch */}
+      {isConnected && username && (
+        <button
+          onClick={handleOpenMyProfile}
+          title={`My Runner Profile (${username})`}
+          className={`flex-shrink-0 flex items-center gap-1 px-2 h-7 rounded-md text-xs font-medium transition-colors
+            ${isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-900/50 text-purple-300 hover:bg-purple-800/60'}`}
+        >
+          <span>👤</span>
+          <span className="hidden sm:inline max-w-[80px] truncate">{username}</span>
+        </button>
+      )}
 
       {/* Kernel status */}
       <div className="flex items-center gap-1 mr-1" title={sysSnap.kernelConnected ? 'Kernel connected' : 'Kernel offline'}>

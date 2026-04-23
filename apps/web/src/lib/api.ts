@@ -405,4 +405,8 @@ export const api = {
   // --- Full Runner Profile ---
   getFullRunnerProfile: (username: string) =>
     request<any>(`/users/runner/${encodeURIComponent(username)}/full-profile`),
+
+  // --- Runner activation (lets admin/any user become a visible runner) ---
+  activateRunner: () =>
+    request<{ message: string; username: string }>('/users/me/activate-runner', { method: 'POST' }),
 };

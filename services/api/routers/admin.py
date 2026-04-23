@@ -33,6 +33,7 @@ class UpdateAdminUserRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
     roles: Optional[list[str]] = None
+    onboarding_completed: Optional[bool] = None
 
 
 def _serialize_user(user: User, roles: list[str]) -> dict[str, Any]:
@@ -145,6 +146,9 @@ async def update_admin_user(
             if existing.scalar_one_or_none():
                 raise HTTPException(status_code=409, detail="Email already in use")
         target.email = email
+
+    if req.onboarding_completed is not None:
+        target.onboarding_completed = req.onboarding_completed
 
     if req.roles is not None:
         normalized_roles = sorted({role.strip() for role in req.roles if role and role.strip()})
