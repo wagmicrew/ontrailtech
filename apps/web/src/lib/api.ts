@@ -372,4 +372,33 @@ export const api = {
   getAllSettings: () => request<any[]>('/admin/settings'),
   updateSetting: (key: string, value: string) =>
     request<any>('/admin/settings', { method: 'POST', body: JSON.stringify({ setting_key: key, setting_value: value }) }),
+
+  // --- Friend-Fi ---
+  buyFriendPass: (runnerId: string) =>
+    request<any>('/friendpass/buy', { method: 'POST', body: JSON.stringify({ runner_id: runnerId }) }),
+  sellFriendPass: (holdingId: string) =>
+    request<any>(`/friendpass/sell/${holdingId}`, { method: 'POST' }),
+  getMyFriendPassHoldings: () =>
+    request<any[]>('/friendpass/my-holdings'),
+  getFriendPassHolders: (runnerId: string) =>
+    request<any[]>(`/friendpass/holders/${runnerId}`),
+
+  // --- POI-Fi ---
+  getMyPois: () => request<any[]>('/poifi/my-pois'),
+  getPoiRewardSummary: () => request<any>('/poifi/rewards/summary'),
+  claimPoiRewards: () =>
+    request<any>('/poifi/rewards/claim', { method: 'POST' }),
+  getPoiMarketplace: () => request<any[]>('/poifi/marketplace'),
+  createPoiListing: (poiId: string, priceEth: number) =>
+    request<any>('/poifi/marketplace/list', { method: 'POST', body: JSON.stringify({ poi_id: poiId, price_eth: priceEth }) }),
+  cancelPoiListing: (listingId: string) =>
+    request<any>(`/poifi/marketplace/listing/${listingId}`, { method: 'DELETE' }),
+  buyPoiListing: (listingId: string) =>
+    request<any>(`/poifi/marketplace/buy/${listingId}`, { method: 'POST' }),
+
+  // --- Runner Bonding (portfolio) ---
+  getMyShareHoldings: () => request<any[]>('/token/my-holdings'),
+
+  // --- Generic request passthrough (for WebOS apps) ---
+  request: <T>(path: string, opts?: RequestInit) => request<T>(path, opts),
 };

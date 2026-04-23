@@ -766,3 +766,27 @@ async def remove_wallet(
     await db.commit()
     return {"status": "deleted"}
 
+
+@router.get("/leaderboard")
+async def get_user_leaderboard(
+    q: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return top runners by reputation score, optionally filtered by username prefix."""
+    query = select(User).where(User.onboarding_completed == True)
+    if q:
+        query = query.where(User.username.ilike(f"%{q}%"))
+    query = query.order_by(User.reputation_score.desc()).limit(min(limit, 100))
+    result = await db.execute(query)
+    users = result.scalars().all()
+    return [
+        {
+            "id": str(u.id),
+            "username": u.username,
+            "avatar_url": u.avatar_url,
+            "reputation_score": u.reputation_score or 0.0,
+        }
+        for u in users
+    ]
+

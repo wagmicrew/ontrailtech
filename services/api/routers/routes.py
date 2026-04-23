@@ -298,6 +298,15 @@ async def checkin_poi(
     )
     db.add(checkin)
     await db.flush()
+
+    # POI-Fi: generate reward for POI owner if visitor != owner
+    if str(poi.owner_id) != str(user.id):
+        try:
+            from routers.poifi import record_checkin_reward
+            await record_checkin_reward(db, poi.id, poi.owner_id, user.id, checkin.id)
+        except Exception:
+            pass  # non-critical
+
     return {"checkin_id": str(checkin.id), "distance_m": round(dist_m, 1)}
 
 

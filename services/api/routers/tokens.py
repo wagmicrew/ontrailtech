@@ -240,3 +240,29 @@ async def trigger_tge(
         "token_symbol": runner_token.token_symbol,
         "tge_date": str(runner_token.tge_date),
     }
+
+
+@router.get("/my-holdings")
+async def get_my_holdings(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all active bonding curve share holdings for the authenticated user."""
+    result = await db.execute(
+        select(FriendShareModel, User)
+        .join(User, User.id == FriendShareModel.runner_id)
+        .where(FriendShareModel.owner_id == user.id)
+        .order_by(FriendShareModel.purchased_at.desc())
+    )
+    rows = result.all()
+    return [
+        {
+            "runner_id": str(s.runner_id),
+            "runner_username": r.username,
+            "runner_avatar": r.avatar_url,
+            "amount": int(s.amount),
+            "purchase_price": str(s.purchase_price),
+            "purchased_at": s.purchased_at.isoformat() if s.purchased_at else None,
+        }
+        for s, r in rows
+    ]

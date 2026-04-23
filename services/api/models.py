@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from sqlalchemy import (
     Column, String, Float, Integer, Boolean, DateTime, ForeignKey, Text, JSON, Index, Numeric
 )
@@ -510,4 +511,57 @@ class StorePurchase(Base):
 
     __table_args__ = (
         Index("ix_store_purchases_user_created", "user_id", "created_at"),
+    )
+
+
+# ── Friend-Fi ──
+
+class FriendPassHolding(Base):
+    """Records each FriendPass purchase (ERC-1155 style, off-chain mirror)."""
+    __tablename__ = "friend_pass_holdings"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    runner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    passes = Column(Integer, nullable=False, default=1)
+    purchase_price_eth = Column(Numeric, nullable=False)
+    sold = Column(Boolean, nullable=False, default=False)
+    sale_price_eth = Column(Numeric, nullable=True)
+    sold_at = Column(DateTime, nullable=True)
+    purchased_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_friend_pass_holdings_owner_runner", "owner_id", "runner_id"),
+    )
+
+
+# ── POI-Fi ──
+
+class POIListing(Base):
+    """Marketplace listing for a POI NFT."""
+    __tablename__ = "poi_listings"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    poi_id = Column(UUID(as_uuid=True), ForeignKey("pois.id"), nullable=False, index=True)
+    seller_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    price_eth = Column(Numeric, nullable=False)
+    status = Column(String(20), nullable=False, default="active")  # active | sold | cancelled
+    buyer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    sold_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class POIReward(Base):
+    """Accumulated check-in reward owed to a POI owner."""
+    __tablename__ = "poi_rewards"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    poi_id = Column(UUID(as_uuid=True), ForeignKey("pois.id"), nullable=False, index=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    visitor_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    checkin_id = Column(UUID(as_uuid=True), ForeignKey("checkins.id"), nullable=False)
+    reward_amount_eth = Column(Numeric, nullable=False, default=Decimal("0.0001"))
+    claimed = Column(Boolean, nullable=False, default=False)
+    claimed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_poi_rewards_owner_claimed", "owner_id", "claimed"),
     )
