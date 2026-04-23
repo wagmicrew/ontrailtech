@@ -76,3 +76,22 @@ async def get_user_roles(user_id, db: AsyncSession) -> list[str]:
         .where(UserRole.user_id == user_id)
     )
     return [r[0] for r in result.all()]
+
+
+async def optional_current_user(
+    authorization: str | None = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Like get_current_user but returns None instead of raising 401."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[7:]
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+    except JWTError:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()

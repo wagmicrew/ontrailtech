@@ -401,4 +401,8 @@ export const api = {
 
   // --- Generic request passthrough (for WebOS apps) ---
   request: <T>(path: string, opts?: RequestInit) => request<T>(path, opts),
+
+  // --- Full Runner Profile ---
+  getFullRunnerProfile: (username: string) =>
+    request<any>(`/users/runner/${encodeURIComponent(username)}/full-profile`),
 };

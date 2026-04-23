@@ -116,6 +116,16 @@ export const APP_REGISTRY: AppDefinition[] = [
     component: lazy(() => import('../apps/poi-fi/PoiFiApp')),
   },
   {
+    id: 'runner-profile',
+    name: 'Runner Profile',
+    icon: '👤',
+    description: 'View runner tokenomics, POIs, routes, FriendPass details and TGE progress',
+    permissions: [],
+    defaultWidth: 1100,
+    defaultHeight: 760,
+    component: lazy(() => import('../apps/runner-profile/RunnerProfileApp')),
+  },
+  {
     id: 'settings',
     name: 'Settings',
     icon: '⚙',

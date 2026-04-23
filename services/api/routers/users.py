@@ -7,16 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from passlib.hash import bcrypt
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Any
 from datetime import datetime, timedelta
 import logging
 
 from database import get_db
 from models import (
-    User, RunnerToken, FriendShareModel, TokenTransaction,
+    User, RunnerToken, FriendShareModel, FriendPassHolding, TokenTransaction,
     ReputationEvent, TokenPool, AuraIndex, Step, StorePurchase,
+    POI, Route, AdminConfig,
 )
-from dependencies import get_current_user, get_user_roles
+from dependencies import get_current_user, get_user_roles, optional_current_user
 from redis_client import cache_delete, cache_get, cache_set
 from web3_client import get_friend_shares_client
 
@@ -789,4 +790,303 @@ async def get_user_leaderboard(
         }
         for u in users
     ]
+
+
+# ── Full Runner Profile Endpoint ─────────────────────────────────────────────
+
+DEFAULT_TGE_DISTRIBUTION = {
+    "runner": 30,
+    "friends": 20,
+    "tippers": 20,
+    "founders": 10,
+    "ancient": 10,
+    "dao": 5,
+    "site": 5,
+}
+
+DEFAULT_TGE_TOTAL_SUPPLY = 1_000_000
+
+
+async def _get_admin_config(db: AsyncSession, key: str, default: Any) -> Any:
+    result = await db.execute(
+        select(AdminConfig).where(AdminConfig.config_key == key)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return default
+    val = row.config_value
+    if isinstance(val, str):
+        import json
+        try:
+            return json.loads(val)
+        except Exception:
+            return val
+    return val
+
+
+@router.get("/runner/{username}/full-profile")
+async def get_full_runner_profile(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+    viewer: User | None = Depends(optional_current_user),
+):
+    """
+    Comprehensive runner profile. Returns:
+    - Runner info + reputation + global valuation
+    - TokenPool status + TGE config + distribution breakdown
+    - FriendPass info + whether viewer is a friend
+    - POIs (full details for friends/owner, teaser for others)
+    - Routes (full for friends/owner, teaser for others)
+    - Own holdings if viewer is the runner
+    """
+    user_result = await db.execute(
+        select(User).where(User.username == username.lower())
+    )
+    runner = user_result.scalar_one_or_none()
+    if not runner:
+        raise HTTPException(status_code=404, detail=f"Runner '{username}' not found")
+
+    runner_id = runner.id
+    viewer_id = viewer.id if viewer else None
+    is_owner = viewer_id is not None and str(viewer_id) == str(runner_id)
+
+    # ── Is viewer a friend (holds this runner's FriendPass)? ──
+    is_friend = False
+    viewer_pass_holding = None
+    if viewer_id and not is_owner:
+        holding_result = await db.execute(
+            select(FriendPassHolding).where(
+                FriendPassHolding.owner_id == viewer_id,
+                FriendPassHolding.runner_id == runner_id,
+                FriendPassHolding.sold == False,
+            ).limit(1)
+        )
+        viewer_pass_holding = holding_result.scalar_one_or_none()
+        is_friend = viewer_pass_holding is not None
+
+    # ── Token Pool ──
+    pool_result = await db.execute(
+        select(TokenPool).where(TokenPool.runner_id == runner_id).limit(1)
+    )
+    pool = pool_result.scalar_one_or_none()
+    current_supply = int(pool.current_supply) if pool else 0
+    liquidity_pool = float(pool.liquidity_pool) if pool else 0.0
+    threshold = float(pool.threshold) if pool else 10.0
+    tge_progress_pct = min(100, int((liquidity_pool / max(threshold, 0.0001)) * 100))
+
+    # ── Bonding curve price at current supply ──
+    BASE = 0.001
+    K = 0.0001
+    token_price_eth = BASE + K * (current_supply ** 2)
+
+    # ── FriendPass info ──
+    pass_sold = await db.scalar(
+        select(func.count(FriendPassHolding.id)).where(
+            FriendPassHolding.runner_id == runner_id,
+            FriendPassHolding.sold == False,
+        )
+    ) or 0
+    fp_price_eth = FRIENDPASS_BASE_PRICE_ETH + FRIENDPASS_SLOPE_ETH * int(pass_sold)
+    fp_price_fiat = fp_price_eth * ETH_USD_RATE
+    pass_holder_count = await db.scalar(
+        select(func.count(func.distinct(FriendPassHolding.owner_id))).where(
+            FriendPassHolding.runner_id == runner_id,
+            FriendPassHolding.sold == False,
+        )
+    ) or 0
+
+    # ── Global valuation ──
+    token_market_cap = token_price_eth * max(current_supply, 1)
+    friendpass_market_cap = fp_price_eth * int(pass_sold)
+    rep_value = float(runner.reputation_score or 0) * 0.001
+    global_valuation_eth = token_market_cap + friendpass_market_cap + rep_value
+    global_valuation_usd = global_valuation_eth * ETH_USD_RATE
+
+    # ── TGE config from AdminConfig ──
+    tge_distribution = await _get_admin_config(db, "tge_distribution", DEFAULT_TGE_DISTRIBUTION)
+    tge_total_supply = await _get_admin_config(db, "tge_total_supply", DEFAULT_TGE_TOTAL_SUPPLY)
+    bonding_curve_type = await _get_admin_config(db, "bonding_curve_type", "quadratic")
+    tge_threshold_config = await _get_admin_config(db, "tge_threshold", threshold)
+
+    # Tokens per group
+    def tokens_for(pct: int) -> int:
+        return int((pct / 100) * int(tge_total_supply))
+
+    tge_breakdown = {
+        k: {"pct": v, "tokens": tokens_for(v)}
+        for k, v in (tge_distribution if isinstance(tge_distribution, dict) else DEFAULT_TGE_DISTRIBUTION).items()
+    }
+
+    # ── POIs (owned by runner) ──
+    poi_result = await db.execute(
+        select(POI).where(POI.owner_id == runner_id)
+        .order_by(POI.minted_at.desc())
+        .limit(20)
+    )
+    pois_raw = poi_result.scalars().all()
+
+    def _serialize_poi(p: POI, full: bool) -> dict:
+        base = {
+            "id": str(p.id),
+            "name": p.name if full else p.name[:3] + "…",
+            "rarity": p.rarity,
+            "latitude": round(p.latitude, full and 6 or 2),
+            "longitude": round(p.longitude, full and 6 or 2),
+            "locked": not full,
+        }
+        if full:
+            base["description"] = p.description
+        return base
+
+    can_see_pois = is_owner or is_friend
+    # Guests see up to 2 teasers
+    pois_visible = pois_raw[:2] if not can_see_pois else pois_raw
+    pois_out = [_serialize_poi(p, can_see_pois) for p in pois_visible]
+    pois_total = len(pois_raw)
+
+    # ── Routes (created by runner) ──
+    route_result = await db.execute(
+        select(Route).where(Route.creator_id == runner_id)
+        .order_by(Route.created_at.desc())
+        .limit(20)
+    )
+    routes_raw = route_result.scalars().all()
+
+    def _serialize_route(r: Route, full: bool) -> dict:
+        base = {
+            "id": str(r.id),
+            "name": r.name if full else r.name[:3] + "…",
+            "difficulty": r.difficulty,
+            "distance_km": r.distance_km if full else None,
+            "completion_count": r.completion_count,
+            "locked": not full,
+        }
+        if full:
+            base["description"] = r.description
+            base["elevation_gain_m"] = r.elevation_gain_m
+            base["estimated_duration_min"] = r.estimated_duration_min
+        return base
+
+    can_see_routes = is_owner or is_friend
+    routes_visible = routes_raw[:2] if not can_see_routes else routes_raw
+    routes_out = [_serialize_route(r, can_see_routes) for r in routes_visible]
+    routes_total = len(routes_raw)
+
+    # ── Viewer's own holdings for this runner (if owner) ──
+    owner_holdings = None
+    if is_owner:
+        # My FriendPass holders
+        fp_holders_result = await db.execute(
+            select(FriendPassHolding, User)
+            .join(User, User.id == FriendPassHolding.owner_id)
+            .where(
+                FriendPassHolding.runner_id == runner_id,
+                FriendPassHolding.sold == False,
+            )
+            .order_by(FriendPassHolding.purchased_at.asc())
+        )
+        fp_holders = [
+            {
+                "owner_id": str(h.owner_id),
+                "username": u.username,
+                "avatar_url": u.avatar_url,
+                "passes": h.passes,
+                "since": h.purchased_at.isoformat() if h.purchased_at else None,
+            }
+            for h, u in fp_holders_result.all()
+        ]
+
+        # My token buyers (top 10 tippers)
+        tippers_result = await db.execute(
+            select(
+                TokenTransaction.buyer_id,
+                func.sum(TokenTransaction.price).label("total"),
+                User.username, User.avatar_url,
+            )
+            .join(User, User.id == TokenTransaction.buyer_id)
+            .where(TokenTransaction.runner_id == runner_id)
+            .group_by(TokenTransaction.buyer_id, User.username, User.avatar_url)
+            .order_by(func.sum(TokenTransaction.price).desc())
+            .limit(10)
+        )
+        tippers = [
+            {
+                "owner_id": str(row.buyer_id),
+                "username": row.username,
+                "avatar_url": row.avatar_url,
+                "total_tipped_eth": f"{float(row.total):.6f}",
+            }
+            for row in tippers_result.all()
+        ]
+
+        owner_holdings = {
+            "friendpass_holders": fp_holders,
+            "top_tippers": tippers,
+            "token_supply": current_supply,
+            "liquidity_pool_eth": f"{liquidity_pool:.6f}",
+        }
+
+    # ── Rank ──
+    rank = await _get_runner_rank(db, runner_id)
+
+    # ── Viewer's FriendPass holdings of this runner (if logged in) ──
+    viewer_friendpass = None
+    if viewer_id and not is_owner:
+        viewer_friendpass = {
+            "is_friend": is_friend,
+            "holding_id": str(viewer_pass_holding.id) if viewer_pass_holding else None,
+            "passes": viewer_pass_holding.passes if viewer_pass_holding else 0,
+        }
+
+    return {
+        # Runner info
+        "id": str(runner.id),
+        "username": runner.username,
+        "avatar_url": runner.avatar_url,
+        "header_image_url": runner.header_image_url,
+        "bio": runner.bio,
+        "location": runner.location,
+        "reputation_score": round(float(runner.reputation_score or 0), 2),
+        "rank": rank,
+        "is_owner": is_owner,
+        # Valuation
+        "global_valuation": {
+            "eth": f"{global_valuation_eth:.6f}",
+            "usd": f"${global_valuation_usd:,.2f}",
+            "token_market_cap_eth": f"{token_market_cap:.6f}",
+            "friendpass_market_cap_eth": f"{friendpass_market_cap:.6f}",
+        },
+        # Token / TGE
+        "token": {
+            "current_supply": current_supply,
+            "current_price_eth": f"{token_price_eth:.6f}",
+            "current_price_usd": f"${token_price_eth * ETH_USD_RATE:.4f}",
+            "liquidity_pool_eth": f"{liquidity_pool:.6f}",
+            "tge_threshold_eth": f"{tge_threshold_config:.2f}",
+            "tge_progress_pct": tge_progress_pct,
+            "bonding_curve_type": bonding_curve_type,
+            "tge_breakdown": tge_breakdown,
+            "tge_total_supply": int(tge_total_supply),
+        },
+        # FriendPass
+        "friendpass": {
+            "current_price_eth": f"{fp_price_eth:.6f}",
+            "current_price_usd": f"${fp_price_fiat:.2f}",
+            "passes_sold": int(pass_sold),
+            "max_supply": FRIENDPASS_MAX_SUPPLY,
+            "holder_count": int(pass_holder_count),
+        },
+        # Viewer context
+        "viewer_friendpass": viewer_friendpass,
+        # Content (friend-gated)
+        "pois": pois_out,
+        "pois_total": pois_total,
+        "pois_locked_count": max(0, pois_total - len(pois_out)),
+        "routes": routes_out,
+        "routes_total": routes_total,
+        "routes_locked_count": max(0, routes_total - len(routes_out)),
+        "content_locked": not can_see_pois,
+        # Owner-only data
+        "owner_data": owner_holdings,
+    }
 
