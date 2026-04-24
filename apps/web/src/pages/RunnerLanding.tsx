@@ -18,6 +18,7 @@ interface ViewerRelationship {
   friendpass_count: number;
   can_buy_friendpass: boolean;
   can_sell_friendpass: boolean;
+  zk_wallet_address: string | null;
 }
 
 interface TeaserContent {

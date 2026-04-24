@@ -2,9 +2,9 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, and_
 from passlib.hash import bcrypt
 from pydantic import BaseModel
 from typing import Optional, List, Any
@@ -15,7 +15,7 @@ from database import get_db
 from models import (
     User, RunnerToken, FriendShareModel, FriendPassHolding, TokenTransaction,
     ReputationEvent, TokenPool, AuraIndex, Step, StorePurchase,
-    POI, Route, AdminConfig,
+    POI, Route, AdminConfig, Friend,
 )
 from dependencies import get_current_user, get_user_roles, optional_current_user
 from redis_client import cache_delete, cache_get, cache_set
@@ -75,6 +75,7 @@ class ViewerRelationship(BaseModel):
     friendpass_count: int = 0
     can_buy_friendpass: bool = True
     can_sell_friendpass: bool = False
+    zk_wallet_address: Optional[str] = None  # Only populated for owner state
 
 
 class TeaserContent(BaseModel):
@@ -753,6 +754,27 @@ async def get_runner_profile_aggregated(
                 "purchased_at": h.purchased_at.isoformat() if h.purchased_at else None,
             })
 
+    # Get or auto-create ZK wallet for owner viewing their profile
+    zk_wallet_address = None
+    if is_owner:
+        from zk_wallet import get_or_create_zk_wallet
+        try:
+            zk_wallet = await get_or_create_zk_wallet(db, str(user.id), create_if_missing=True)
+            if zk_wallet:
+                zk_wallet_address = zk_wallet.wallet_address
+        except Exception as e:
+            logger.warning(f"Failed to auto-create ZK wallet for user {user.id}: {e}")
+    
+    # If viewer is friend, check if they have a ZK wallet
+    elif is_friendpass_holder and viewer:
+        from zk_wallet import get_or_create_zk_wallet
+        try:
+            viewer_zk = await get_or_create_zk_wallet(db, str(viewer.id), create_if_missing=False)
+            if viewer_zk:
+                zk_wallet_address = viewer_zk.wallet_address
+        except Exception:
+            pass
+
     profile = RunnerProfileData(
         id=str(user.id),
         username=user.username,
@@ -791,6 +813,7 @@ async def get_runner_profile_aggregated(
             friendpass_count=int(friendpass_count),
             can_buy_friendpass=can_buy,
             can_sell_friendpass=can_sell,
+            zk_wallet_address=zk_wallet_address if is_owner else None,
         ),
         teaser=TeaserContent(
             locked_pois_count=locked_pois_count,
@@ -1107,6 +1130,103 @@ async def remove_wallet(
     await db.delete(wallet)
     await db.commit()
     return {"status": "deleted"}
+
+
+# ─── ZK Wallet Management ───────────────────────────────────────────────────
+
+@router.post("/me/wallets/zk/create")
+async def create_zk_wallet(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new Zero-Knowledge wallet for the authenticated user.
+    Returns the wallet address (private key is encrypted and stored securely).
+    """
+    from zk_wallet import get_or_create_zk_wallet, generate_zk_wallet, encrypt_private_key
+    
+    # Check if user already has a ZK wallet
+    result = await db.execute(
+        select(WalletModel)
+        .where(
+            WalletModel.user_id == current_user.id,
+            WalletModel.wallet_type == "zk"
+        )
+    )
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        raise HTTPException(
+            status_code=409, 
+            detail="ZK wallet already exists for this user"
+        )
+    
+    # Generate new ZK wallet
+    wallet_address, private_key = generate_zk_wallet()
+    encrypted_key = encrypt_private_key(private_key)
+    
+    wallet = WalletModel(
+        user_id=current_user.id,
+        wallet_address=wallet_address,
+        wallet_type="zk",
+        encrypted_private_key=encrypted_key
+    )
+    db.add(wallet)
+    await db.commit()
+    await db.refresh(wallet)
+    
+    return {
+        "id": str(wallet.id),
+        "wallet_address": wallet.wallet_address,
+        "wallet_type": wallet.wallet_type,
+        "created_at": wallet.created_at.isoformat() if wallet.created_at else None,
+        "message": "ZK wallet created successfully"
+    }
+
+
+@router.post("/me/wallets/zk/auto-create")
+async def auto_create_zk_wallet_if_missing(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Automatically create a ZK wallet if the user doesn't have one.
+    Idempotent - returns existing wallet if already created.
+    """
+    from zk_wallet import auto_create_wallet_for_user
+    
+    wallet_info = await auto_create_wallet_for_user(db, str(current_user.id))
+    
+    return {
+        **wallet_info,
+        "message": "ZK wallet ready"
+    }
+
+
+@router.get("/me/wallets/zk")
+async def get_zk_wallet(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the user's ZK wallet details (without private key)."""
+    result = await db.execute(
+        select(WalletModel)
+        .where(
+            WalletModel.user_id == current_user.id,
+            WalletModel.wallet_type == "zk"
+        )
+    )
+    wallet = result.scalar_one_or_none()
+    
+    if not wallet:
+        raise HTTPException(status_code=404, detail="No ZK wallet found")
+    
+    return {
+        "id": str(wallet.id),
+        "wallet_address": wallet.wallet_address,
+        "wallet_type": wallet.wallet_type,
+        "created_at": wallet.created_at.isoformat() if wallet.created_at else None,
+    }
 
 
 @router.get("/leaderboard")

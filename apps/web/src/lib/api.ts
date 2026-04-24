@@ -293,6 +293,34 @@ export const api = {
   getUser: (id: string) => request<any>(`/users/${id}`),
   getRunner: (username: string) => request<any>(`/users/runner/${username}`),
   getReputation: (id: string) => request<any>(`/users/${id}/reputation`),
+  
+  // --- Profile Search ---
+  searchProfiles: (query: string, limit: number = 20) =>
+    request<Array<{ id: string; username: string; avatar_url: string | null; reputation_score: number; runner_token: boolean }>>(
+      `/users/search/profiles?q=${encodeURIComponent(query)}&limit=${limit}`
+    ),
+  
+  // --- Friends ---
+  getMyFriends: () =>
+    request<Array<{ id: string; username: string; avatar_url: string | null; reputation_score: number }>>('/users/me/friends'),
+  getFriendSuggestions: (limit: number = 10) =>
+    request<Array<{ id: string; username: string; avatar_url: string | null; reputation_score: number; mutual_friends: number; reason: string }>>(
+      `/users/me/friend-suggestions?limit=${limit}`
+    ),
+  getUserFriends: (userId: string) =>
+    request<Array<{ id: string; username: string; avatar_url: string | null; reputation_score: number }>>(`/users/${userId}/friends`),
+  
+  // --- ZK Wallet ---
+  createZKWallet: () =>
+    request<{ id: string; wallet_address: string; wallet_type: string; created_at: string | null; message: string }>(
+      '/users/me/wallets/zk/create', { method: 'POST' }
+    ),
+  autoCreateZKWallet: () =>
+    request<{ id: string; wallet_address: string; wallet_type: string; created_at: string | null; message: string }>(
+      '/users/me/wallets/zk/auto-create', { method: 'POST' }
+    ),
+  getZKWallet: () =>
+    request<{ id: string; wallet_address: string; wallet_type: string; created_at: string | null }>('/users/me/wallets/zk'),
 
   // --- POIs ---
   getNearbyPois: (lat: number, lon: number, radius: number = 5) =>

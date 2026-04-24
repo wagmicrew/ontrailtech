@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, ty
 import { useSearchParams } from 'react-router-dom';
 import { api, type AuthUser } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import FriendsList from '../components/FriendsList';
 
 const PROFILE_CROP_SIZE = 320;
 const MINTED_POSTS_STORAGE_PREFIX = 'ontrail_minted_posts_v2';
@@ -123,12 +124,13 @@ type ColorOverlay = {
   angle: number;
 };
 
-type TabKey = 'overview' | 'edit' | 'social' | 'store' | 'wallets';
+type TabKey = 'overview' | 'edit' | 'social' | 'friends' | 'store' | 'wallets';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'edit', label: 'Edit Profile' },
   { key: 'social', label: 'Minted Posts' },
+  { key: 'friends', label: 'Friends' },
   { key: 'store', label: 'Store' },
   { key: 'wallets', label: 'Wallets' },
 ];
@@ -706,6 +708,12 @@ export default function Profile() {
             onMintPost={handleMintPost}
             posts={mintedPosts}
             profileName={me.username || 'runner'}
+          />
+        )}
+
+        {tab === 'friends' && (
+          <FriendsList
+            userId={viewingPublicRunner ? runner?.id : me?.id}
           />
         )}
 

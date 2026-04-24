@@ -6,7 +6,7 @@ const resources = {
     translation: {
       'app.title': 'OnTrail',
       'nav.explore': 'Explore',
-      'nav.routes': 'Routes',
+      'nav.trailLab': 'Trail Lab',
       'nav.tokens': 'Tokens',
       'nav.profile': 'Profile',
       'auth.connect': 'Connect Wallet',

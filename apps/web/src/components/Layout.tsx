@@ -34,7 +34,7 @@ const AdminIcon = () => (
 
 const NAV_ITEMS = [
   { path: '/explore', label: 'nav.explore', icon: <ExploreIcon /> },
-  { path: '/routes', label: 'nav.routes', icon: <RoutesIcon /> },
+  { path: '/trail-lab', label: 'nav.trailLab', icon: <RoutesIcon /> },
   { path: '/tokens', label: 'nav.tokens', icon: <TokensIcon /> },
   { path: '/profile', label: 'nav.profile', icon: <ProfileIcon /> },
 ];

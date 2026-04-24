@@ -5,6 +5,12 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
+// Search result types
+type SearchResult =
+  | { type: 'location'; name: string; lat: number; lon: number; display_name: string }
+  | { type: 'user'; username: string; avatar_url?: string | null; totalAura: string; auraLevel: string }
+  | { type: 'poi'; id: string; name: string; lat: number; lon: number; rarity: string; description?: string };
+
 type Poi = {
   id: string;
   name: string;
@@ -152,6 +158,15 @@ export default function Explore() {
   const [runnersLoading, setRunnersLoading] = useState(true);
   const [trendingLoading, setTrendingLoading] = useState(true);
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [activeSearchType, setActiveSearchType] = useState<'all' | 'pois' | 'routes' | 'users'>('all');
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   // Fetch top runners + trending on mount
   useEffect(() => {
     api.getRunnerLeaderboard()
@@ -163,6 +178,25 @@ export default function Explore() {
       .then((d: any) => setTrending((d?.nodes ?? d ?? []).slice(0, 6)))
       .catch(() => {})
       .finally(() => setTrendingLoading(false));
+  }, []);
+
+  // Close search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.search-container')) {
+        setShowSearchDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Cleanup search timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -279,6 +313,167 @@ export default function Explore() {
     setLoading(false);
   };
 
+  // Geocoding function using OpenStreetMap Nominatim
+  const geocodeLocation = async (query: string): Promise<SearchResult[]> => {
+    if (!query.trim() || query.length < 2) return [];
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.map((item: any) => ({
+        type: 'location' as const,
+        name: item.name || item.display_name.split(',')[0],
+        lat: parseFloat(item.lat),
+        lon: parseFloat(item.lon),
+        display_name: item.display_name,
+      }));
+    } catch {
+      return [];
+    }
+  };
+
+  // Search for users by username
+  const searchUsers = async (query: string): Promise<SearchResult[]> => {
+    if (!query.trim() || query.length < 2) return [];
+    try {
+      // Try exact match first
+      const runner = await api.getRunner(query);
+      if (runner && runner.username) {
+        return [{
+          type: 'user' as const,
+          username: runner.username,
+          avatar_url: runner.avatar_url,
+          totalAura: runner.totalAura || '0',
+          auraLevel: runner.auraLevel || 'Low',
+        }];
+      }
+    } catch {
+      // No exact match found
+    }
+    // Search through cached topRunners for partial matches
+    const matches = topRunners
+      .filter(r => r.username.toLowerCase().includes(query.toLowerCase()))
+      .slice(0, 3)
+      .map(r => ({
+        type: 'user' as const,
+        username: r.username,
+        avatar_url: r.avatar_url,
+        totalAura: r.totalAura,
+        auraLevel: r.auraLevel,
+      }));
+    return matches;
+  };
+
+  // Perform unified search
+  const performSearch = async (query: string) => {
+    if (!query.trim() || query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchLoading(true);
+
+    const promises: Promise<SearchResult[]>[] = [];
+
+    if (activeSearchType === 'all' || activeSearchType === 'pois' || activeSearchType === 'routes') {
+      promises.push(geocodeLocation(query));
+    }
+    if (activeSearchType === 'all' || activeSearchType === 'users') {
+      promises.push(searchUsers(query));
+    }
+
+    const results = await Promise.all(promises);
+    const combined = results.flat();
+    setSearchResults(combined);
+    setSearchLoading(false);
+  };
+
+  // Debounced search handler
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => performSearch(value), 300);
+  };
+
+  // Handle selecting a search result
+  const handleSelectResult = async (result: SearchResult) => {
+    setShowSearchDropdown(false);
+    setSearchQuery(result.type === 'location' ? (result as Extract<SearchResult, { type: 'location' }>).name : result.type === 'user' ? (result as Extract<SearchResult, { type: 'user' }>).username : '');
+
+    if (result.type === 'location') {
+      const locationResult = result as Extract<SearchResult, { type: 'location' }>;
+      // Center map on location and load POIs there
+      const newCoords = { lat: locationResult.lat, lon: locationResult.lon };
+      setCoords(newCoords);
+      if (mapRef.current) {
+        mapRef.current.easeTo({ center: [locationResult.lon, locationResult.lat], zoom: 14, duration: 1000 });
+      }
+      await loadPois(newCoords);
+    } else if (result.type === 'user') {
+      const userResult = result as Extract<SearchResult, { type: 'user' }>;
+      // Get runner details for location
+      try {
+        const runner = await api.getRunner(userResult.username);
+        if (runner && runner.location) {
+          // Try to geocode their location
+          const locations = await geocodeLocation(runner.location);
+          if (locations.length > 0) {
+            const loc = locations[0] as Extract<SearchResult, { type: 'location' }>;
+            const newCoords = { lat: loc.lat, lon: loc.lon };
+            setCoords(newCoords);
+            if (mapRef.current) {
+              mapRef.current.easeTo({ center: [loc.lon, loc.lat], zoom: 13, duration: 1000 });
+            }
+            // Add a special marker for the user
+            addUserMarker(userResult.username, loc.lon, loc.lat, runner.avatar_url);
+          }
+        }
+        // Navigate to profile
+        navigate(`/profile?runner=${userResult.username}`);
+      } catch {
+        // Just navigate if we can't get location
+        navigate(`/profile?runner=${userResult.username}`);
+      }
+    }
+  };
+
+  // Add a user marker to the map
+  const addUserMarker = (username: string, lon: number, lat: number, avatarUrl?: string | null) => {
+    if (!mapRef.current) return;
+
+    const markerNode = document.createElement('div');
+    markerNode.style.width = '36px';
+    markerNode.style.height = '36px';
+    markerNode.style.borderRadius = '999px';
+    markerNode.style.background = avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #10b981, #06b6d4)';
+    markerNode.style.border = '3px solid white';
+    markerNode.style.boxShadow = '0 4px 20px rgba(16,185,129,0.4)';
+    markerNode.style.cursor = 'pointer';
+
+    const popup = new Popup({ offset: 18 }).setHTML(`
+      <div style="min-width: 180px; color: #0f172a; font-family: system-ui, sans-serif;">
+        <div style="font-size: 14px; font-weight: 700; color: #059669;">@${username}</div>
+        <div style="margin-top: 6px; font-size: 12px; color: #64748b;">Runner Profile</div>
+        <a href="/profile?runner=${username}" style="display: inline-block; margin-top: 8px; padding: 6px 12px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 600;">View Profile</a>
+      </div>
+    `);
+
+    new maplibregl.Marker({ element: markerNode })
+      .setLngLat([lon, lat])
+      .setPopup(popup)
+      .addTo(mapRef.current);
+  };
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearchDropdown(false);
+    searchInputRef.current?.focus();
+  };
+
   const handleMint = async () => {
     if (!coords || !mintName) return;
     setMinting(true);
@@ -301,8 +496,8 @@ export default function Explore() {
   return (
     <div className="space-y-8">
 
-      {/* ─── Epic Hero Banner with map inside ─── */}
-      <div className="relative overflow-hidden rounded-[28px] shadow-[0_24px_64px_rgba(15,23,42,0.22)]">
+      {/* ─── Epic Hero Banner with map inside — fills viewport ─── */}
+      <div className="relative h-screen min-h-[600px] overflow-hidden rounded-none shadow-[0_24px_64px_rgba(15,23,42,0.22)] flex flex-col">
         {/* Background image */}
         <img
           src="/explore-banner.png"
@@ -315,16 +510,130 @@ export default function Explore() {
         {/* Subtle vignette sides */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(5,10,20,0.45)_100%)]" />
 
-        <div className="relative z-10 px-6 pt-8 pb-6 lg:px-8">
+        <div className="relative z-10 px-6 pt-6 pb-4 lg:px-8 flex flex-col h-full">
           {/* Title row */}
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
-            <div>
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-4 shrink-0">
+            <div className="flex-1 min-w-0">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 backdrop-blur-sm mb-3">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Live trail explorer
               </span>
               <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-lg sm:text-5xl">Explore</h1>
               <p className="mt-1.5 text-sm text-white/70">Discover POIs, top runners, and trending activity on the trail.</p>
+
+              {/* Search Bar */}
+              <div className="mt-4 relative max-w-xl search-container">
+                <div className="relative flex items-center">
+                  <svg className="absolute left-4 h-5 w-5 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    onFocus={() => searchResults.length > 0 && setShowSearchDropdown(true)}
+                    placeholder="Search POIs, routes, or runners..."
+                    className="w-full rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md pl-12 pr-24 py-3 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-emerald-400/50 focus:border-emerald-400/50 transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={clearSearch}
+                      className="absolute right-20 p-1.5 text-white/50 hover:text-white transition-colors"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                  {/* Search Type Tabs */}
+                  <div className="absolute right-2 flex items-center gap-0.5">
+                    {(['all', 'pois', 'routes', 'users'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => { setActiveSearchType(type); if (searchQuery) performSearch(searchQuery); searchInputRef.current?.focus(); }}
+                        className={`px-2 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${
+                          activeSearchType === type
+                            ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/30'
+                            : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                        }`}
+                        title={type === 'all' ? 'All' : type}
+                      >
+                        {type === 'all' ? 'All' : type === 'pois' ? 'POIs' : type === 'routes' ? 'Routes' : 'Users'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Search Dropdown */}
+                {showSearchDropdown && (searchResults.length > 0 || searchLoading) && (
+                  <div className="absolute top-full left-0 right-0 mt-2 rounded-2xl border border-white/20 bg-slate-900/95 backdrop-blur-xl shadow-[0_24px_48px_rgba(0,0,0,0.4)] overflow-hidden z-50 max-h-[400px] overflow-y-auto">
+                    {searchLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="py-2">
+                        {/* Group results by type */}
+                        {searchResults.filter((r): r is Extract<SearchResult, { type: 'location' }> => r.type === 'location').length > 0 && (
+                          <div className="px-3 py-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Locations & Routes</span>
+                            {searchResults.filter((r): r is Extract<SearchResult, { type: 'location' }> => r.type === 'location').map((result, idx) => (
+                              <button
+                                key={`loc-${idx}`}
+                                onClick={() => handleSelectResult(result)}
+                                className="w-full mt-1 flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-left group"
+                              >
+                                <div className="shrink-0 w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                                  <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-white group-hover:text-emerald-300 transition-colors truncate">{result.name}</p>
+                                  <p className="text-xs text-white/50 truncate">{result.display_name}</p>
+                                </div>
+                                <span className="text-[10px] text-white/30 shrink-0">Go</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {searchResults.filter((r): r is Extract<SearchResult, { type: 'user' }> => r.type === 'user').length > 0 && (
+                          <div className="px-3 py-2 border-t border-white/10">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-sky-400">Runners</span>
+                            {searchResults.filter((r): r is Extract<SearchResult, { type: 'user' }> => r.type === 'user').map((result, idx) => (
+                              <button
+                                key={`user-${idx}`}
+                                onClick={() => handleSelectResult(result)}
+                                className="w-full mt-1 flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-left group"
+                              >
+                                <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 flex items-center justify-center text-white text-xs font-bold overflow-hidden relative">
+                                  {result.username?.[0]?.toUpperCase()}
+                                  {result.avatar_url && <img src={result.avatar_url} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-white group-hover:text-sky-300 transition-colors truncate">@{result.username}</p>
+                                  <p className="text-xs text-white/50">Aura {parseFloat(result.totalAura).toFixed(1)} · {result.auraLevel}</p>
+                                </div>
+                                <span className="text-[10px] text-white/30 shrink-0">Profile</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {searchResults.length === 0 && !searchLoading && (
+                          <div className="px-4 py-6 text-center">
+                            <p className="text-sm text-white/50">No results found</p>
+                            <p className="text-xs text-white/30 mt-1">Try searching for a city, POI name, or runner username</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Quick stats — right side of title */}
@@ -350,10 +659,10 @@ export default function Explore() {
             )}
           </div>
 
-          {/* Map card — elevated glass panel so it floats above the hero */}
-          <div className="overflow-hidden rounded-2xl border border-white/20 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-sm">
+          {/* Map card — elevated glass panel so it floats above the hero — grows to fill space */}
+          <div className="overflow-hidden rounded-2xl border border-white/20 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-sm flex flex-col flex-1 min-h-0">
             {/* Map toolbar */}
-            <div className="flex flex-col gap-2 border-b border-white/10 bg-black/30 px-5 py-3 md:flex-row md:items-center md:justify-between backdrop-blur-md">
+            <div className="flex flex-col gap-2 border-b border-white/10 bg-black/30 px-5 py-3 md:flex-row md:items-center md:justify-between backdrop-blur-md shrink-0">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-400">Hexa map explorer</p>
                 <h3 className="text-sm font-bold text-white">Nearby POIs on live tiles</h3>
@@ -368,10 +677,10 @@ export default function Explore() {
               </div>
             </div>
 
-            <div ref={mapContainerRef} className="h-[420px] w-full bg-slate-900" />
+            <div ref={mapContainerRef} className="flex-1 min-h-0 w-full bg-slate-900" />
 
             {mapStatus && (
-              <div className="bg-black/30 backdrop-blur-md px-5 py-2.5">
+              <div className="bg-black/30 backdrop-blur-md px-5 py-2.5 shrink-0">
                 <p className="text-xs font-semibold text-amber-400">{mapStatus}</p>
               </div>
             )}

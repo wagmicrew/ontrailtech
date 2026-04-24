@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Explore from './pages/Explore';
-import RoutesPage from './pages/Routes';
+import TrailLab from './pages/TrailLab';
 import Tokens from './pages/Tokens';
 import Profile from './pages/Profile';
 import AuraLeaderboard from './pages/AuraLeaderboard';
@@ -17,6 +17,12 @@ function AdminRoute() {
   const { isAdmin, isLoading } = useAuth();
   if (isLoading) return null;
   return isAdmin ? <WebOSShell /> : <Navigate to="/" replace />;
+}
+
+function PrivateRoute({ children }: { children: React.ReactElement }) {
+  const { isConnected, isLoading } = useAuth();
+  if (isLoading) return null;
+  return isConnected ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -43,7 +49,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
           <Route path="/explore" element={<Explore />} />
-          <Route path="/routes" element={<RoutesPage />} />
+          <Route path="/trail-lab" element={<PrivateRoute><TrailLab /></PrivateRoute>} />
           <Route path="/tokens" element={<Tokens />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/leaderboard" element={<AuraLeaderboard />} />

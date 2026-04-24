@@ -118,14 +118,10 @@ function mergeServerTrails(localTrails: TrailDraft[], remoteRoutes: any[], owner
   return merged.sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
 }
 
-export default function RoutesPage() {
+export default function TrailLab() {
   const { isConnected, isAdmin, login, username, email } = useAuth();
-  const [searchParams] = useSearchParams();
-  const runnerParam = searchParams.get('runner')?.trim().toLowerCase() || '';
-  const isPublicRunnerView = Boolean(runnerParam) && runnerParam !== (username || '').toLowerCase();
-  const isOwnerView = !isPublicRunnerView;
-  const ownerName = isPublicRunnerView ? runnerParam : (username || email?.split('@')[0] || 'Trail owner');
-  const ownerKey = runnerParam || username || email || 'guest-trail-lab';
+  const ownerName = username || email?.split('@')[0] || 'Trail owner';
+  const ownerKey = username || email || 'guest-trail-lab';
 
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -207,12 +203,12 @@ export default function RoutesPage() {
     if (stored.length) {
       setTrails(stored);
       setSelectedTrailId(stored[0].id);
-    } else if (isOwnerView) {
+    } else {
       const starter = createStarterTrail(ownerKey, ownerName);
       setTrails([starter]);
       setSelectedTrailId(starter.id);
     }
-  }, [isOwnerView, ownerKey, ownerName]);
+  }, [ownerKey, ownerName]);
 
   useEffect(() => {
     let active = true;
@@ -220,22 +216,18 @@ export default function RoutesPage() {
     async function hydrate() {
       setLoading(true);
       try {
-        const remoteRoutes = isPublicRunnerView
-          ? await api.getRoutesByRunner(runnerParam)
-          : isConnected
-            ? await api.getMyRoutes()
-            : [];
+        const remoteRoutes = isConnected ? await api.getMyRoutes() : [];
 
         if (!active) return;
 
         setTrails((current) => {
-          const base = current.length ? current : (isOwnerView ? [createStarterTrail(ownerKey, ownerName)] : []);
+          const base = current.length ? current : [createStarterTrail(ownerKey, ownerName)];
           const merged = remoteRoutes.length ? mergeServerTrails(base, remoteRoutes, ownerKey, ownerName) : base;
           saveTrailDrafts(ownerKey, merged);
           return merged;
         });
       } catch {
-        if (active && !trails.length && isOwnerView) {
+        if (active && !trails.length) {
           const starter = createStarterTrail(ownerKey, ownerName);
           setTrails([starter]);
           setSelectedTrailId(starter.id);
@@ -249,7 +241,7 @@ export default function RoutesPage() {
     return () => {
       active = false;
     };
-  }, [isConnected, isOwnerView, isPublicRunnerView, ownerKey, ownerName, runnerParam, trails.length]);
+  }, [isConnected, ownerKey, ownerName, trails.length]);
 
   useEffect(() => {
     if (!trails.length) return;
@@ -402,10 +394,6 @@ export default function RoutesPage() {
   }
 
   function requireOwnerAccess() {
-    if (!isOwnerView) {
-      setError('Only the profile owner can edit, mint, or remove trails in this studio view.');
-      return false;
-    }
     if (!isConnected) {
       login();
       return false;
@@ -744,42 +732,163 @@ export default function RoutesPage() {
     setNotice(status === 'approved' ? 'Photo approved and now boosts the trail story.' : 'Photo rejected and removed from the public approval path.');
   }
 
+  // Filter and search state
+  const [trailFilter, setTrailFilter] = useState<'all' | 'drafts' | 'published' | 'minted'>('all');
+  const [trailSearch, setTrailSearch] = useState('');
+
+  const filteredTrails = useMemo(() => {
+    let result = trails;
+    if (trailFilter !== 'all') {
+      result = result.filter(t => {
+        if (trailFilter === 'drafts') return !t.published;
+        if (trailFilter === 'published') return t.published && !t.minted;
+        if (trailFilter === 'minted') return t.minted;
+        return true;
+      });
+    }
+    if (trailSearch.trim()) {
+      const q = trailSearch.toLowerCase();
+      result = result.filter(t => t.name.toLowerCase().includes(q) || t.region.toLowerCase().includes(q));
+    }
+    return result;
+  }, [trails, trailFilter, trailSearch]);
+
+  const stats = useMemo(() => ({
+    trails: trails.length,
+    drafts: trails.filter(t => !t.published).length,
+    published: trails.filter(t => t.published && !t.minted).length,
+    minted: trails.filter(t => t.minted).length,
+    views: totalViews,
+    reputation: totalReputation,
+  }), [trails, totalViews, totalReputation]);
+
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[32px] border border-white/70 bg-gradient-to-br from-white via-emerald-50/70 to-cyan-50/80 p-6 shadow-[0_30px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl md:p-8">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_36%),radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.18),transparent_34%)]" />
-        <div className="relative grid gap-5 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
-          <div>
-            <span className="inline-flex rounded-full border border-emerald-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
-              Trail Lab
-            </span>
-            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900 md:text-4xl">
-              Edit, enrich, publish, and mint mobile-built trails.
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base">
-              Import route files, add scenic POIs and detours, surface views and reputation, and moderate GPS-validated community photos in one studio.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button onClick={handleCreateTrail} className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-emerald-600">
-                New trail draft
+    <div className="space-y-8">
+      {/* ─── Epic Trail Lab Hero ─── */}
+      <div className="relative min-h-[600px] lg:min-h-[700px] overflow-hidden rounded-none lg:rounded-[32px] shadow-[0_24px_64px_rgba(15,23,42,0.22)]">
+        {/* Hero background image */}
+        <img
+          src="/traillabhero.png"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        />
+        {/* Dark gradient overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,20,40,0.65)_0%,rgba(10,20,40,0.45)_30%,rgba(10,20,40,0.78)_100%)]" />
+        {/* Vignette */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(5,10,20,0.55)_100%)]" />
+
+        <div className="relative z-10 px-6 py-8 lg:px-10 lg:py-12 flex flex-col h-full">
+          {/* Header row */}
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8">
+            <div className="flex-1 min-w-0">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 backdrop-blur-sm mb-3">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Trail Studio
+              </span>
+              <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-lg sm:text-5xl lg:text-6xl">
+                Trail Lab
+              </h1>
+              <p className="mt-2 max-w-xl text-sm text-white/80 leading-relaxed">
+                Create, edit, and mint trails. Import GPX files, add scenic POIs and detours, surface views and reputation—all in one studio.
+              </p>
+            </div>
+
+            {/* Quick Action Buttons */}
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <button onClick={handleCreateTrail} className="rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition backdrop-blur-sm border border-emerald-400/30">
+                + New Trail
               </button>
-              <button onClick={refreshGpsLock} className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-white">
-                Refresh GPS lock
+              <button onClick={refreshGpsLock} className="rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2.5 text-sm font-semibold text-white transition backdrop-blur-sm">
+                Refresh GPS
               </button>
-              <label className="cursor-pointer rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
-                {importing ? 'Importing…' : 'Import trail file'}
+              <label className="cursor-pointer rounded-2xl bg-amber-500/90 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white transition backdrop-blur-sm border border-amber-400/30">
+                {importing ? 'Importing…' : 'Import'}
                 <input type="file" accept={IMPORT_ACCEPT} className="hidden" onChange={handleImportFile} />
               </label>
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <StatCard label="Trails" value={String(trails.length)} note={isPublicRunnerView ? `${ownerName} gallery` : 'Owner studio'} />
-            <StatCard label="Views" value={String(totalViews)} note="Discovery and reach" />
-            <StatCard label="Reputation" value={String(totalReputation)} note="Quality signal" />
+          {/* Glassmorphic Search Bar with Filter Tabs */}
+          <div className="relative max-w-2xl mb-6">
+            <div className="relative flex items-center">
+              <svg className="absolute left-4 h-5 w-5 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={trailSearch}
+                onChange={(e) => setTrailSearch(e.target.value)}
+                placeholder="Search trails by name or region..."
+                className="w-full rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md pl-12 pr-36 py-3.5 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-emerald-400/50 focus:border-emerald-400/50 transition-all"
+              />
+              {trailSearch && (
+                <button
+                  onClick={() => setTrailSearch('')}
+                  className="absolute right-28 p-1.5 text-white/50 hover:text-white transition-colors"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+              {/* Filter Type Tabs */}
+              <div className="absolute right-2 flex items-center gap-0.5">
+                {(['all', 'drafts', 'published', 'minted'] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setTrailFilter(type)}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${
+                      trailFilter === type
+                        ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/30'
+                        : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                    }`}
+                    title={type}
+                  >
+                    {type === 'all' ? 'All' : type === 'drafts' ? 'Drafts' : type === 'published' ? 'Pub' : 'Minted'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Epic Stats Row */}
+          <div className="flex flex-wrap gap-3 mb-8">
+            <StatBadge label="Trails" value={stats.trails} color="emerald" />
+            <StatBadge label="Drafts" value={stats.drafts} color="amber" />
+            <StatBadge label="Published" value={stats.published} color="sky" />
+            <StatBadge label="Minted" value={stats.minted} color="purple" />
+            <StatBadge label="Views" value={stats.views.toLocaleString()} color="slate" />
+            <StatBadge label="Reputation" value={stats.reputation.toLocaleString()} color="rose" />
+          </div>
+
+          {/* Gallery Preview Grid in Hero */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filteredTrails.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <p className="text-white/60 text-sm">No trails match your filter</p>
+                <p className="text-white/40 text-xs mt-1">Create a new trail or adjust your search</p>
+              </div>
+            ) : (
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 h-full overflow-y-auto pr-2">
+                {filteredTrails.slice(0, 12).map((trail, index) => (
+                  <TrailPreviewCard
+                    key={trail.id}
+                    trail={trail}
+                    selected={trail.id === selectedTrailId}
+                    spotlight={index === 0}
+                    onClick={() => setSelectedTrailId(trail.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      </section>
+      </div>
 
       {(notice || error) && (
         <div className={`rounded-[24px] border px-4 py-3 text-sm backdrop-blur-xl ${error ? 'border-rose-200 bg-rose-50/90 text-rose-700' : 'border-emerald-200 bg-emerald-50/90 text-emerald-700'}`}>
@@ -788,7 +897,7 @@ export default function RoutesPage() {
       )}
 
       <GlassPanel
-        title={isPublicRunnerView ? `${ownerName}'s trail gallery` : 'Trail gallery'}
+        title="Trail gallery"
         eyebrow="Bento grid spotlight cards"
         action={
           <div className="flex flex-wrap gap-2 text-xs text-slate-500">
@@ -813,7 +922,7 @@ export default function RoutesPage() {
                 trail={trail}
                 spotlight={index % 3 === 0}
                 selected={trail.id === selectedTrail?.id}
-                canManage={isOwnerView && isConnected}
+                canManage={isConnected}
                 busy={busyTrailId === trail.id}
                 onEdit={() => {
                   setSelectedTrailId(trail.id);
@@ -837,7 +946,6 @@ export default function RoutesPage() {
                   <input
                     value={selectedTrail.name}
                     onChange={(event) => handleTrailFieldChange('name', event.target.value)}
-                    disabled={!isOwnerView}
                     className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300"
                     placeholder="Blue summit loop"
                   />
@@ -846,7 +954,6 @@ export default function RoutesPage() {
                   <input
                     value={selectedTrail.region}
                     onChange={(event) => handleTrailFieldChange('region', event.target.value)}
-                    disabled={!isOwnerView}
                     className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300"
                     placeholder="Northern ridge"
                   />
@@ -855,7 +962,6 @@ export default function RoutesPage() {
                   <select
                     value={selectedTrail.difficulty}
                     onChange={(event) => handleTrailFieldChange('difficulty', event.target.value as TrailDraft['difficulty'])}
-                    disabled={!isOwnerView}
                     className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300"
                   >
                     {DIFFICULTIES.map((difficulty) => (
@@ -867,7 +973,6 @@ export default function RoutesPage() {
                   <input
                     value={selectedTrail.surface}
                     onChange={(event) => handleTrailFieldChange('surface', event.target.value)}
-                    disabled={!isOwnerView}
                     className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300"
                     placeholder="Singletrack, gravel, alpine"
                   />
@@ -878,7 +983,6 @@ export default function RoutesPage() {
                     min={15}
                     value={selectedTrail.durationMin}
                     onChange={(event) => handleTrailFieldChange('durationMin', Number(event.target.value) || 15)}
-                    disabled={!isOwnerView}
                     className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300"
                   />
                 </Field>
@@ -893,7 +997,6 @@ export default function RoutesPage() {
                       rows={4}
                       value={selectedTrail.description}
                       onChange={(event) => handleTrailFieldChange('description', event.target.value)}
-                      disabled={!isOwnerView}
                       className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300"
                       placeholder="What makes this trail special, who it is for, and which detours are worth the extra meters."
                     />
@@ -929,7 +1032,7 @@ export default function RoutesPage() {
 
                 <TrailMapEditor
                   trail={selectedTrail}
-                  canEdit={isOwnerView && isConnected}
+                  canEdit={isConnected}
                   mode={mapEditorMode}
                   selectedCheckpointIndex={selectedCheckpointIndex}
                   selectedPoiId={selectedPoiId}
@@ -950,7 +1053,7 @@ export default function RoutesPage() {
                         <button
                           key={`${point.lat}-${point.lon}-${index}`}
                           type="button"
-                          draggable={isOwnerView && isConnected}
+                          draggable={isConnected}
                           onDragStart={() => setDragCheckpointIndex(index)}
                           onDragOver={(event) => event.preventDefault()}
                           onDrop={() => handleCheckpointDrop(index)}
@@ -1172,12 +1275,10 @@ export default function RoutesPage() {
                         </div>
                       </div>
                     </div>
-                    {(isOwnerView || isAdmin) && (
-                      <div className="mt-3 flex gap-2">
-                        <button onClick={() => reviewSubmission(item.id, 'approved')} className="rounded-2xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-white">Approve</button>
-                        <button onClick={() => reviewSubmission(item.id, 'rejected')} className="rounded-2xl bg-rose-500 px-3 py-2 text-xs font-semibold text-white">Reject</button>
-                      </div>
-                    )}
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={() => reviewSubmission(item.id, 'approved')} className="rounded-2xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-white">Approve</button>
+                      <button onClick={() => reviewSubmission(item.id, 'rejected')} className="rounded-2xl bg-rose-500 px-3 py-2 text-xs font-semibold text-white">Reject</button>
+                    </div>
                   </div>
                 ))
               )}
@@ -1238,6 +1339,73 @@ function StatCard({ label, value, note }: { label: string; value: string; note: 
       <p className="mt-2 text-2xl font-black text-slate-900">{value}</p>
       <p className="mt-1 text-xs text-slate-500">{note}</p>
     </div>
+  );
+}
+
+const COLOR_STYLES: Record<string, { bg: string; border: string; text: string; glow: string }> = {
+  emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-400/30', text: 'text-emerald-300', glow: 'shadow-emerald-500/20' },
+  amber: { bg: 'bg-amber-500/20', border: 'border-amber-400/30', text: 'text-amber-300', glow: 'shadow-amber-500/20' },
+  sky: { bg: 'bg-sky-500/20', border: 'border-sky-400/30', text: 'text-sky-300', glow: 'shadow-sky-500/20' },
+  purple: { bg: 'bg-purple-500/20', border: 'border-purple-400/30', text: 'text-purple-300', glow: 'shadow-purple-500/20' },
+  slate: { bg: 'bg-slate-500/20', border: 'border-slate-400/30', text: 'text-slate-300', glow: 'shadow-slate-500/20' },
+  rose: { bg: 'bg-rose-500/20', border: 'border-rose-400/30', text: 'text-rose-300', glow: 'shadow-rose-500/20' },
+};
+
+function StatBadge({ label, value, color }: { label: string; value: number | string; color: keyof typeof COLOR_STYLES }) {
+  const styles = COLOR_STYLES[color];
+  return (
+    <div className={`rounded-2xl border ${styles.border} ${styles.bg} px-4 py-2.5 backdrop-blur-md text-center shadow-lg ${styles.glow}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">{label}</p>
+      <p className={`text-xl font-bold ${styles.text} mt-0.5`}>{value}</p>
+    </div>
+  );
+}
+
+function TrailPreviewCard({
+  trail,
+  selected,
+  spotlight,
+  onClick,
+}: {
+  trail: TrailDraft;
+  selected: boolean;
+  spotlight?: boolean;
+  onClick: () => void;
+}) {
+  const status = trail.minted ? 'minted' : trail.published ? 'published' : 'draft';
+  const statusColors = {
+    minted: 'bg-amber-500 text-white',
+    published: 'bg-emerald-500 text-white',
+    draft: 'bg-white/20 text-white/80',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className={`group relative overflow-hidden rounded-2xl border p-3 text-left transition-all hover:scale-[1.02] ${
+        selected
+          ? 'border-emerald-400 bg-emerald-500/20 ring-2 ring-emerald-400/50'
+          : 'border-white/20 bg-white/10 hover:bg-white/20'
+      } ${spotlight ? 'ring-1 ring-white/30' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-white truncate">{trail.name}</p>
+          <p className="text-xs text-white/50 truncate">{trail.distanceKm > 0 ? `${trail.distanceKm.toFixed(1)} km` : 'No route'}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${statusColors[status]}`}>
+          {status}
+        </span>
+      </div>
+      <div className="mt-2 flex items-center gap-3 text-[10px] text-white/60">
+        <span>{trail.points.length} pts</span>
+        <span>{trail.pois.length} POIs</span>
+        <span>{trail.views} views</span>
+      </div>
+      {spotlight && (
+        <div className="absolute -right-2 -top-2 h-8 w-8 bg-emerald-400/30 rounded-full blur-xl" />
+      )}
+    </button>
   );
 }
 

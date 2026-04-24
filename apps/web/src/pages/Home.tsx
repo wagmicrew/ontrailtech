@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
+import ProfileSearch from '../components/ProfileSearch';
 
 const fadeUp = {
   initial: { opacity: 0, y: 24 },
@@ -143,6 +144,16 @@ export default function Home() {
               <motion.p variants={fadeUp} className="relative mt-5 max-w-2xl text-base leading-8 text-slate-700 sm:text-lg">
                 OnTrail helps athletes, organizers, and supporters turn verified movement into reputation, discovery, and community-backed value.
               </motion.p>
+
+              {/* Profile Search */}
+              <motion.div variants={fadeUp} className="relative mt-6 w-full max-w-md">
+                <ProfileSearch
+                  placeholder="Find runners by username..."
+                  onSelect={(username) => {
+                    window.location.href = `https://${username}.ontrail.tech`;
+                  }}
+                />
+              </motion.div>
 
               <motion.div variants={fadeUp} className="relative mt-8 flex flex-wrap gap-3">
                 {isConnected ? (
@@ -316,13 +327,60 @@ export default function Home() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
-            className="relative overflow-hidden rounded-[32px] shadow-[0_32px_80px_rgba(15,23,42,0.18)]"
+            className="relative overflow-hidden rounded-[32px] shadow-[0_32px_80px_rgba(15,23,42,0.28)] min-h-[420px] flex items-center"
           >
+            {/* Background image */}
             <img
               src="/operating-model-banner.png"
-              alt="OnTrail operating model — join, move, earn"
-              className="w-full h-auto object-cover"
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full object-cover object-[center_40%]"
             />
+            {/* Left-side gradient so text is readable over the scene */}
+            <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(5,10,25,0.82)_0%,rgba(5,10,25,0.65)_45%,rgba(5,10,25,0.15)_100%)]" />
+
+            {/* Content */}
+            <div className="relative z-10 w-full px-8 py-14 lg:px-14">
+              <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+
+                {/* Left — headline copy */}
+                <motion.div initial="initial" whileInView="animate" viewport={{ once: true }} variants={stagger}>
+                  <motion.span variants={fadeUp} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 backdrop-blur-sm">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    Your trail journey
+                  </motion.span>
+                  <motion.h2 variants={fadeUp} className="mt-4 text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl drop-shadow-lg">
+                    Every run builds<br />
+                    <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 bg-clip-text text-transparent">
+                      your legacy.
+                    </span>
+                  </motion.h2>
+                  <motion.p variants={fadeUp} className="mt-4 max-w-md text-base leading-7 text-white/75">
+                    Log your routes, discover hidden trail gems, and turn every kilometre into reputation — visible to your community and backed on-chain.
+                  </motion.p>
+                </motion.div>
+
+                {/* Right — step cards */}
+                <motion.div initial="initial" whileInView="animate" viewport={{ once: true }} variants={stagger} className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    { step: '01', title: 'Start your trail', desc: 'Create a profile and get your personal trail identity in minutes.' },
+                    { step: '02', title: 'Run & discover', desc: 'Log routes, find POIs, and sync your activity to build real proof of effort.' },
+                    { step: '03', title: 'Rise on the board', desc: 'Climb the leaderboard, unlock aura tiers, and earn community recognition.' },
+                  ].map((item) => (
+                    <motion.div
+                      key={item.step}
+                      variants={fadeUp}
+                      className="rounded-2xl border border-white/15 bg-white/10 p-5 backdrop-blur-md shadow-lg"
+                    >
+                      <div className="text-xs font-bold text-emerald-400 tracking-widest mb-2">{item.step}</div>
+                      <h3 className="text-sm font-bold text-white">{item.title}</h3>
+                      <p className="mt-1.5 text-xs leading-5 text-white/65">{item.desc}</p>
+                    </motion.div>
+                  ))}
+                </motion.div>
+
+              </div>
+            </div>
           </motion.div>
         </div>
       </section>
