@@ -1,16 +1,59 @@
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+// ── Inline UI primitives (no shadcn dependency) ──────────────────────────────
+const Card = ({ children, className = '' }: any) => <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
+const CardHeader = ({ children }: any) => <div className="px-6 pt-5 pb-2">{children}</div>;
+const CardTitle = ({ children }: any) => <h3 className="text-lg font-semibold text-slate-900">{children}</h3>;
+const CardDescription = ({ children }: any) => <p className="text-sm text-slate-500 mt-0.5">{children}</p>;
+const CardContent = ({ children, className = '' }: any) => <div className={`px-6 pb-5 ${className}`}>{children}</div>;
+const Button = ({ children, onClick, disabled, size }: any) => (
+  <button onClick={onClick} disabled={disabled}
+    className={`rounded-xl bg-emerald-600 px-${size === 'lg' ? '6' : '4'} py-${size === 'lg' ? '2.5' : '2'} text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors`}>
+    {children}
+  </button>
+);
+const Input = ({ type = 'text', value, onChange, step, className = '' }: any) => (
+  <input type={type} value={value} onChange={onChange} step={step}
+    className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 ${className}`} />
+);
+const Label = ({ children, htmlFor }: any) => <label htmlFor={htmlFor} className="text-sm font-medium text-slate-700">{children}</label>;
+const Badge = ({ children, variant }: any) => (
+  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+    variant === 'destructive' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+  }`}>{children}</span>
+);
+const Separator = () => <hr className="border-slate-200 my-2" />;
+const Switch = ({ id, checked, onCheckedChange }: any) => (
+  <button id={id} type="button" role="switch" aria-checked={checked} onClick={() => onCheckedChange(!checked)}
+    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+      checked ? 'bg-emerald-500' : 'bg-slate-300'
+    }`}>
+    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+      checked ? 'translate-x-6' : 'translate-x-1'
+    }`} />
+  </button>
+);
+const Slider = ({ value, onValueChange, max, step }: any) => (
+  <input type="range" value={value[0]} min={0} max={max} step={step}
+    onChange={(e) => onValueChange([parseInt(e.target.value)])}
+    className="w-full accent-emerald-500" />
+);
+const Tabs = ({ children, defaultValue }: any) => { const [active, setActive] = React.useState(defaultValue); return <div>{React.Children.map(children, c => React.cloneElement(c, { activeTab: active, setActiveTab: setActive }))}</div>; };
+const TabsList = ({ children, activeTab, setActiveTab }: any) => <div className="flex gap-1 rounded-xl bg-slate-100 p-1 w-fit mb-4">{React.Children.map(children, c => React.cloneElement(c, { activeTab, setActiveTab }))}</div>;
+const TabsTrigger = ({ children, value, activeTab, setActiveTab }: any) => (
+  <button onClick={() => setActiveTab(value)}
+    className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
+      activeTab === value ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
+    }`}>{children}</button>
+);
+const TabsContent = ({ children, value, activeTab }: any) => activeTab === value ? <div>{children}</div> : null;
+const Table = ({ children }: any) => <table className="w-full text-sm">{children}</table>;
+const TableHeader = ({ children }: any) => <thead>{children}</thead>;
+const TableBody = ({ children }: any) => <tbody>{children}</tbody>;
+const TableRow = ({ children }: any) => <tr className="border-b border-slate-100">{children}</tr>;
+const TableHead = ({ children }: any) => <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{children}</th>;
+const TableCell = ({ children, className = '' }: any) => <td className={`px-3 py-2 ${className}`}>{children}</td>;
 
 interface FriendPassConfig {
   id: string;
