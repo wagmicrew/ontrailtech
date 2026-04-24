@@ -300,60 +300,82 @@ export default function Explore() {
 
   return (
     <div className="space-y-8">
-      {/* ─── Hero header ─── */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Explore</h1>
-        <p className="text-sm text-gray-500 mt-1">Discover POIs, top runners, and trending activity on the trail.</p>
-      </div>
 
-      {/* ─── Quick stats bar ─── */}
-      {coords && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-100 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-600">Nearby POIs</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{pois.length}</p>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-br from-purple-50 to-fuchsia-50 border border-purple-100 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-widest text-purple-600">Rare+</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{pois.filter(p => p.rarity !== 'common').length}</p>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-100 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-widest text-amber-600">Top Runners</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{topRunners.length}</p>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-100 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-widest text-sky-600">Trending</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{trending.length}</p>
-          </div>
-        </div>
-      )}
+      {/* ─── Epic Hero Banner with map inside ─── */}
+      <div className="relative overflow-hidden rounded-[28px] shadow-[0_24px_64px_rgba(15,23,42,0.22)]">
+        {/* Background image */}
+        <img
+          src="/explore-banner.png"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover object-[center_30%]"
+        />
+        {/* Dark gradient overlay — bottom-heavy so map stays crisp */}
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,20,40,0.52)_0%,rgba(10,20,40,0.38)_30%,rgba(10,20,40,0.72)_100%)]" />
+        {/* Subtle vignette sides */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(5,10,20,0.45)_100%)]" />
 
-      {/* ─── Map section (unchanged look) ─── */}
-      <div className="overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-lg shadow-emerald-100/60">
-        <div className="flex flex-col gap-3 border-b border-emerald-50 bg-gradient-to-r from-emerald-50 via-white to-sky-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-600">Hexa map explorer</p>
-            <h3 className="text-lg font-bold text-slate-900">Nearby POIs on live tiles</h3>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
-            <span className="rounded-full bg-white px-3 py-1 ring-1 ring-emerald-100">
-              Base map: {mapSource === 'openfreemap' ? 'OpenFreeMap' : 'OpenStreetMap'}
-            </span>
-            <span className="rounded-full bg-white px-3 py-1 ring-1 ring-emerald-100">
-              {pois.length} POIs in 10 km
-            </span>
-          </div>
-        </div>
+        <div className="relative z-10 px-6 pt-8 pb-6 lg:px-8">
+          {/* Title row */}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 backdrop-blur-sm mb-3">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Live trail explorer
+              </span>
+              <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-lg sm:text-5xl">Explore</h1>
+              <p className="mt-1.5 text-sm text-white/70">Discover POIs, top runners, and trending activity on the trail.</p>
+            </div>
 
-        <div ref={mapContainerRef} className="h-[420px] w-full bg-slate-100" />
+            {/* Quick stats — right side of title */}
+            {coords && (
+              <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
+                <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 backdrop-blur-md text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">POIs</p>
+                  <p className="text-xl font-bold text-white mt-0.5">{pois.length}</p>
+                </div>
+                <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 backdrop-blur-md text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-purple-300">Rare+</p>
+                  <p className="text-xl font-bold text-white mt-0.5">{pois.filter(p => p.rarity !== 'common').length}</p>
+                </div>
+                <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 backdrop-blur-md text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-300">Runners</p>
+                  <p className="text-xl font-bold text-white mt-0.5">{topRunners.length}</p>
+                </div>
+                <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 backdrop-blur-md text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-300">Trending</p>
+                  <p className="text-xl font-bold text-white mt-0.5">{trending.length}</p>
+                </div>
+              </div>
+            )}
+          </div>
 
-        <div className="flex flex-col gap-3 px-5 py-4 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
-          <p>OpenFreeMap is the primary tile source. Falls back to OpenStreetMap automatically.</p>
-          {mapStatus && (
-            <p className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
-              {mapStatus}
-            </p>
-          )}
+          {/* Map card — elevated glass panel so it floats above the hero */}
+          <div className="overflow-hidden rounded-2xl border border-white/20 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-sm">
+            {/* Map toolbar */}
+            <div className="flex flex-col gap-2 border-b border-white/10 bg-black/30 px-5 py-3 md:flex-row md:items-center md:justify-between backdrop-blur-md">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-400">Hexa map explorer</p>
+                <h3 className="text-sm font-bold text-white">Nearby POIs on live tiles</h3>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-white/60">
+                <span className="rounded-full bg-white/10 border border-white/15 px-3 py-1">
+                  {mapSource === 'openfreemap' ? 'OpenFreeMap' : 'OpenStreetMap'}
+                </span>
+                <span className="rounded-full bg-white/10 border border-white/15 px-3 py-1">
+                  {pois.length} POIs in 10 km
+                </span>
+              </div>
+            </div>
+
+            <div ref={mapContainerRef} className="h-[420px] w-full bg-slate-900" />
+
+            {mapStatus && (
+              <div className="bg-black/30 backdrop-blur-md px-5 py-2.5">
+                <p className="text-xs font-semibold text-amber-400">{mapStatus}</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -290,15 +290,19 @@ export default function Home() {
                 variants={fadeUp}
                 className={`rounded-3xl border border-slate-200/80 bg-gradient-to-br ${card.accent} p-6 shadow-sm shadow-slate-200/60`}
               >
-                {'img' in card && card.img ? (
-                  <div className="mb-4 h-11 w-11 rounded-2xl overflow-hidden shadow-sm">
-                    <img src={card.img} alt={card.title} className="h-full w-full object-cover" />
+                <div className="flex items-start gap-4">
+                  {'img' in card && card.img ? (
+                    <div className="shrink-0 h-20 w-20 rounded-2xl overflow-hidden shadow-md">
+                      <img src={card.img} alt={card.title} className="h-full w-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className={`shrink-0 h-20 w-20 rounded-2xl ${card.icon}`} />
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold text-slate-900">{card.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{card.desc}</p>
                   </div>
-                ) : (
-                  <div className={`mb-4 h-11 w-11 rounded-2xl ${card.icon}`} />
-                )}
-                <h3 className="text-lg font-bold text-slate-900">{card.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{card.desc}</p>
+                </div>
               </motion.div>
             ))}
           </motion.div>

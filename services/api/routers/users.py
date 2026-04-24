@@ -848,6 +848,178 @@ async def get_user_roles_endpoint(user_id: str, db: AsyncSession = Depends(get_d
     return {"user_id": user_id, "roles": roles}
 
 
+# ─── Profile Search & Friends ─────────────────────────────────────────────────
+
+class ProfileSearchResult(BaseModel):
+    id: str
+    username: str
+    avatar_url: Optional[str]
+    reputation_score: float
+    runner_token: bool = False
+
+class FriendSuggestion(BaseModel):
+    id: str
+    username: str
+    avatar_url: Optional[str]
+    reputation_score: float
+    mutual_friends: int = 0
+    reason: str  # 'nearby' | 'similar_activity' | 'mutual_friends'
+
+@router.get("/search/profiles", response_model=list[ProfileSearchResult])
+async def search_profiles(
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Search runner profiles by username or display name."""
+    search_pattern = f"%{q.lower()}%"
+    
+    result = await db.execute(
+        select(User)
+        .where(
+            or_(
+                User.username.ilike(search_pattern),
+                User.bio.ilike(search_pattern)
+            ),
+            User.is_active == True
+        )
+        .order_by(User.reputation_score.desc())
+        .limit(limit)
+    )
+    
+    users = result.scalars().all()
+    
+    # Check which users have runner tokens
+    user_ids = [u.id for u in users]
+    token_result = await db.execute(
+        select(RunnerToken.runner_id)
+        .where(RunnerToken.runner_id.in_(user_ids))
+    )
+    token_runner_ids = {row[0] for row in token_result.all()}
+    
+    return [
+        ProfileSearchResult(
+            id=str(u.id),
+            username=u.username,
+            avatar_url=u.avatar_url,
+            reputation_score=u.reputation_score or 0.0,
+            runner_token=u.id in token_runner_ids
+        )
+        for u in users
+    ]
+
+
+@router.get("/{user_id}/friends", response_model=list[ProfileSearchResult])
+async def get_user_friends(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    viewer: User = Depends(get_current_user)
+):
+    """Get list of user's friends."""
+    # Verify viewer is requesting their own friends or has permission
+    if str(viewer.id) != user_id:
+        raise HTTPException(status_code=403, detail="Can only view own friends")
+    
+    result = await db.execute(
+        select(User)
+        .join(Friend, or_(
+            and_(Friend.user_id == viewer.id, Friend.friend_id == User.id),
+            and_(Friend.friend_id == viewer.id, Friend.user_id == User.id)
+        ))
+        .where(Friend.status == 'accepted')
+        .limit(100)
+    )
+    
+    friends = result.scalars().all()
+    
+    return [
+        ProfileSearchResult(
+            id=str(f.id),
+            username=f.username,
+            avatar_url=f.avatar_url,
+            reputation_score=f.reputation_score or 0.0
+        )
+        for f in friends
+    ]
+
+
+@router.get("/{user_id}/friend-suggestions", response_model=list[FriendSuggestion])
+async def get_friend_suggestions(
+    user_id: str,
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    viewer: User = Depends(get_current_user)
+):
+    """Get friend suggestions for the user."""
+    if str(viewer.id) != user_id:
+        raise HTTPException(status_code=403, detail="Can only get suggestions for self")
+    
+    suggestions = []
+    
+    # 1. Find users with similar reputation scores (nearby in ranking)
+    viewer_rep = viewer.reputation_score or 0
+    result = await db.execute(
+        select(User)
+        .where(
+            User.id != viewer.id,
+            User.reputation_score.between(viewer_rep - 10, viewer_rep + 10),
+            User.is_active == True
+        )
+        .order_by(func.random())
+        .limit(limit // 2)
+    )
+    similar_users = result.scalars().all()
+    
+    for u in similar_users:
+        suggestions.append(FriendSuggestion(
+            id=str(u.id),
+            username=u.username,
+            avatar_url=u.avatar_url,
+            reputation_score=u.reputation_score or 0.0,
+            reason='similar_activity'
+        ))
+    
+    # 2. Find friends of friends (mutual connections)
+    # Get current friends
+    friends_result = await db.execute(
+        select(Friend.friend_id if Friend.user_id == viewer.id else Friend.user_id)
+        .where(
+            or_(Friend.user_id == viewer.id, Friend.friend_id == viewer.id),
+            Friend.status == 'accepted'
+        )
+    )
+    friend_ids = {row[0] for row in friends_result.all()}
+    
+    if friend_ids:
+        # Find friends of these friends
+        fof_result = await db.execute(
+            select(User, func.count(Friend.id).label('mutual_count'))
+            .join(Friend, or_(
+                and_(Friend.user_id.in_(friend_ids), Friend.friend_id == User.id),
+                and_(Friend.friend_id.in_(friend_ids), Friend.user_id == User.id)
+            ))
+            .where(
+                User.id != viewer.id,
+                ~User.id.in_(friend_ids)  # Not already friends
+            )
+            .group_by(User.id)
+            .order_by(func.count(Friend.id).desc())
+            .limit(limit - len(suggestions))
+        )
+        
+        for u, mutual_count in fof_result.all():
+            suggestions.append(FriendSuggestion(
+                id=str(u.id),
+                username=u.username,
+                avatar_url=u.avatar_url,
+                reputation_score=u.reputation_score or 0.0,
+                mutual_friends=mutual_count,
+                reason='mutual_friends'
+            ))
+    
+    return suggestions
+
+
 # ─── Multi-wallet management ──────────────────────────────────────────────────
 
 from models import Wallet as WalletModel  # noqa: E402 (local import to avoid circular deps)
