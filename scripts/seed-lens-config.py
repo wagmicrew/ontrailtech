@@ -17,8 +17,16 @@ from decimal import Decimal
 from datetime import datetime
 from uuid import uuid4
 
-# Database connection string - update this for your environment
-DATABASE_URL = "postgresql+asyncpg://user:password@localhost/ontrail_db"
+# Read DATABASE_URL from environment or services/api/.env
+_env_file = os.path.join(os.path.dirname(__file__), '..', 'services', 'api', '.env')
+if os.path.exists(_env_file):
+    with open(_env_file) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line.startswith('DATABASE_URL='):
+                os.environ.setdefault('DATABASE_URL', _line.split('=', 1)[1])
+                break
+DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql+asyncpg://postgres:@localhost:5432/ontrail_tech')
 
 async def seed_lens_config():
     """Seed the Lens configuration with testnet settings."""
