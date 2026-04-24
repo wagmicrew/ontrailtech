@@ -293,7 +293,13 @@ export const api = {
   getUser: (id: string) => request<any>(`/users/${id}`),
   getRunner: (username: string) => request<any>(`/users/runner/${username}`),
   getReputation: (id: string) => request<any>(`/users/${id}/reputation`),
-  
+
+  // --- User Search (for Explore page) ---
+  searchUsers: (query: string, limit: number = 5) =>
+    request<Array<{ id: string; username: string; avatar_url: string | null; totalAura: string; auraLevel: string }>>(
+      `/users/search?q=${encodeURIComponent(query)}&limit=${limit}`
+    ),
+
   // --- Profile Search ---
   searchProfiles: (query: string, limit: number = 20) =>
     request<Array<{ id: string; username: string; avatar_url: string | null; reputation_score: number; runner_token: boolean }>>(

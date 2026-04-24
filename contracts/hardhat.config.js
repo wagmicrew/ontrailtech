@@ -26,6 +26,30 @@ module.exports = {
       accounts: process.env.PLATFORM_PRIVATE_KEY ? [process.env.PLATFORM_PRIVATE_KEY] : [],
       chainId: 11155111,
     },
+    // Lens Chain Testnet
+    lens_testnet: {
+      url: "https://rpc.testnet.lens.xyz",
+      accounts: process.env.LENS_PRIVATE_KEY ? [process.env.LENS_PRIVATE_KEY] : [],
+      chainId: 371112,
+    },
+    // Lens Chain Mainnet
+    lens_mainnet: {
+      url: "https://rpc.lens.xyz",
+      accounts: process.env.LENS_PRIVATE_KEY ? [process.env.LENS_PRIVATE_KEY] : [],
+      chainId: 371111,
+    },
+    // Polygon (for FriendPass NFTs)
+    polygon: {
+      url: process.env.ALCHEMY_POLYGON_RPC || "https://polygon-mainnet.g.alchemy.com/v2/" + (process.env.ALCHEMY_API_KEY || ""),
+      accounts: process.env.PLATFORM_PRIVATE_KEY ? [process.env.PLATFORM_PRIVATE_KEY] : [],
+      chainId: 137,
+    },
+    // Polygon Amoy testnet
+    polygon_amoy: {
+      url: process.env.ALCHEMY_POLYGON_AMOY_RPC || "https://polygon-amoy.g.alchemy.com/v2/" + (process.env.ALCHEMY_API_KEY || ""),
+      accounts: process.env.PLATFORM_PRIVATE_KEY ? [process.env.PLATFORM_PRIVATE_KEY] : [],
+      chainId: 80002,
+    },
   },
   etherscan: {
     apiKey: {

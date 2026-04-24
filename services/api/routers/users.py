@@ -449,6 +449,58 @@ async def activate_runner_profile(
     return {"message": "Runner profile activated", "username": user.username}
 
 
+@router.get("/search")
+async def search_users(
+    q: str = Query(..., min_length=2, description="Username prefix to search for"),
+    limit: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Search users by username prefix (case-insensitive).
+    Returns users with aura info for frontend search dropdown.
+    """
+    # Sub-query: user IDs that have admin or ancient_owner roles
+    from models import UserRole, ACLRole
+    admin_ids_sq = (
+        select(UserRole.user_id)
+        .join(ACLRole, UserRole.role_id == ACLRole.id)
+        .where(ACLRole.role_name.in_(["admin", "ancient_owner"]))
+        .scalar_subquery()
+    )
+
+    # Query users matching the prefix that are onboarded or admin/ancient
+    query = (
+        select(User)
+        .where(
+            (User.onboarding_completed == True) | (User.id.in_(admin_ids_sq)),
+            User.username.ilike(f"{q}%"),
+        )
+        .order_by(User.reputation_score.desc())
+        .limit(limit)
+    )
+
+    result = await db.execute(query)
+    users = result.scalars().all()
+
+    # Fetch aura data for each user
+    user_ids = [u.id for u in users]
+    aura_result = await db.execute(
+        select(AuraIndex).where(AuraIndex.user_id.in_(user_ids))
+    )
+    aura_by_user = {a.user_id: a for a in aura_result.scalars().all()}
+
+    return [
+        {
+            "id": str(u.id),
+            "username": u.username,
+            "avatar_url": u.avatar_url,
+            "totalAura": str(aura_by_user.get(u.id, AuraIndex()).aura_score or 0.0),
+            "auraLevel": aura_by_user.get(u.id, AuraIndex()).level or "Low",
+        }
+        for u in users
+    ]
+
+
 @router.post("/me/avatar")
 async def update_avatar(
     req: AvatarRequest,

@@ -341,6 +341,46 @@ class SiteSetting(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class LensConfig(Base):
+    """Lens Protocol configuration with API keys and authentication."""
+    __tablename__ = "lens_config"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    
+    # Lens API Configuration
+    lens_api_key = Column(String(255), nullable=True)  # Lens API key
+    lens_api_url = Column(String(255), nullable=False, default="https://api.testnet.lens.xyz")
+    lens_graphql_url = Column(String(255), nullable=False, default="https://api.testnet.lens.xyz/graphql")
+    lens_rpc_url = Column(String(255), nullable=False, default="https://rpc.testnet.lens.xyz")
+    lens_chain_id = Column(Integer, nullable=False, default=371112)  # Lens Chain testnet
+    
+    # Authentication Settings for App Verification
+    auth_endpoint_url = Column(String(255), nullable=True)  # Custom auth endpoint
+    auth_secret = Column(String(255), nullable=True)  # Auth secret
+    auth_access = Column(String(50), nullable=False, default="custom")  # custom, public, restricted
+    
+    # Wallet Configuration
+    lens_wallet_address = Column(String(255), nullable=True)  # Main wallet for operations
+    lens_explorer_url = Column(String(255), nullable=True)  # Lens explorer URL
+    
+    # Mode Configuration
+    mode = Column(String(20), nullable=False, default="simulate")  # simulate, live
+    
+    # Contract Addresses (for live mode)
+    friendpass_contract_address = Column(String(255), nullable=True)
+    profile_wallet_contract_address = Column(String(255), nullable=True)
+    
+    # Onramp Configuration
+    gho_onramp_enabled = Column(Boolean, nullable=False, default=False)
+    gho_onramp_amount = Column(Numeric, nullable=True, default=Decimal("0.1"))  # Default GHO amount
+    lens_token_onramp_enabled = Column(Boolean, nullable=False, default=False)
+    lens_token_onramp_amount = Column(Numeric, nullable=True, default=Decimal("0.1"))
+    
+    # Metadata
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ── Installed Apps ──
 
 class InstalledApp(Base):
@@ -549,6 +589,92 @@ class POIListing(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+# ── Profile Wallet System (Polygon) ──
+
+class ProfileWallet(Base):
+    """Profile wallet for each user on Polygon chain - managed by Admin OS."""
+    __tablename__ = "profile_wallets"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    wallet_address = Column(String(42), nullable=False, unique=True)
+    chain_id = Column(Integer, default=137)  # Polygon mainnet (137) or testnet (80001)
+    encrypted_private_key = Column(Text, nullable=True)
+    balance_eth = Column(Numeric, default=0)
+    balance_matic = Column(Numeric, default=0)
+    is_active = Column(Boolean, default=True)
+    created_by_admin = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ── FriendPass Configuration System ──
+
+class FriendPassConfig(Base):
+    """Global FriendPass configuration with tax and pricing settings."""
+    __tablename__ = "friendpass_config"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    config_name = Column(String(100), unique=True, nullable=False, default="default")
+    
+    # Pricing parameters
+    base_price_eth = Column(Numeric, default=Decimal("0.001"))
+    slope_eth = Column(Numeric, default=Decimal("0.0001"))
+    max_supply_per_runner = Column(Integer, default=100)
+    max_per_wallet = Column(Integer, default=5)
+    
+    # Reputation-based pricing
+    reputation_enabled = Column(Boolean, default=True)
+    reputation_multiplier = Column(Numeric, default=Decimal("1.0"))  # Multiplier for reputation impact
+    reputation_base_threshold = Column(Float, default=100.0)  # Min reputation to affect price
+    
+    # Tax structure (basis points, total = 10000)
+    tax_sitewallet_bps = Column(Integer, default=3000)  # 30% to site wallet
+    tax_profile_owner_bps = Column(Integer, default=4000)  # 40% to profile owner
+    tax_dao_bps = Column(Integer, default=2000)  # 20% to DAO
+    tax_ancient_bps = Column(Integer, default=1000)  # 10% to Ancient Owner
+    
+    # Volatile vs reputation-based pricing split
+    volatile_price_percentage = Column(Integer, default=60)  # 60% volatile (market-based)
+    reputation_price_percentage = Column(Integer, default=40)  # 40% reputation-based
+    
+    # Selling mechanism
+    sell_enabled = Column(Boolean, default=True)
+    sell_fee_bps = Column(Integer, default=500)  # 5% sell fee
+    min_sell_price_eth = Column(Numeric, default=Decimal("0.0005"))
+    
+    # Chain configuration
+    chain_id = Column(Integer, default=137)  # Polygon
+    contract_address = Column(String(42), nullable=True)
+    
+    # Metadata
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FriendPassSimulation(Base):
+    """Simulation results for different FriendPass configuration scenarios."""
+    __tablename__ = "friendpass_simulations"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    simulation_name = Column(String(200), nullable=False)
+    
+    # Input parameters
+    config_params = Column(JSON, nullable=False)
+    runner_reputation = Column(Float, default=0.0)
+    supply_sold = Column(Integer, default=0)
+    
+    # Output results
+    price_eth = Column(Numeric, nullable=False)
+    price_breakdown = Column(JSON, nullable=False)  # {volatile: X, reputation: Y}
+    tax_distribution = Column(JSON, nullable=False)  # {sitewallet: X, profile_owner: Y, dao: Z, ancient: W}
+    total_revenue_eth = Column(Numeric, nullable=False)
+    
+    # Metadata
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class POIReward(Base):
     """Accumulated check-in reward owed to a POI owner."""
     __tablename__ = "poi_rewards"
@@ -565,3 +691,54 @@ class POIReward(Base):
     __table_args__ = (
         Index("ix_poi_rewards_owner_claimed", "owner_id", "claimed"),
     )
+
+
+class GraphQLMessageType(Base):
+    """Custom GraphQL message type definitions for Lens Protocol integration."""
+    __tablename__ = "graphql_message_types"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    
+    # GraphQL schema definition
+    type_definition = Column(Text, nullable=False)  # GraphQL type definition
+    fields = Column(JSON, nullable=False)  # Array of field definitions
+    query_template = Column(Text, nullable=True)  # GraphQL query template
+    mutation_template = Column(Text, nullable=True)  # GraphQL mutation template
+    
+    # Lens Protocol integration
+    lens_metadata_type = Column(String(50), nullable=True)  # PROFILE, POST, COMMENT, etc.
+    metadata_attributes = Column(JSON, nullable=True)  # Metadata attribute mappings
+    
+    # Status
+    is_active = Column(Boolean, nullable=False, default=True)
+    is_system = Column(Boolean, nullable=False, default=False)  # System types cannot be deleted
+    
+    # Metadata
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GraphQLMessageTemplate(Base):
+    """Pre-configured GraphQL message templates."""
+    __tablename__ = "graphql_message_templates"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    message_type_id = Column(UUID(as_uuid=True), ForeignKey("graphql_message_types.id"), nullable=False, index=True)
+    
+    template_name = Column(String(100), nullable=False)
+    template_content = Column(Text, nullable=False)
+    
+    # Template variables
+    variables_schema = Column(JSON, nullable=True)  # JSON schema for variables
+    
+    # Usage
+    usage_count = Column(Integer, nullable=False, default=0)
+    
+    # Status
+    is_active = Column(Boolean, nullable=False, default=True)
+    
+    # Metadata
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

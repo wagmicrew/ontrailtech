@@ -765,7 +765,7 @@ export default function TrailLab() {
   return (
     <div className="space-y-8">
       {/* ─── Epic Trail Lab Hero ─── */}
-      <div className="relative min-h-[600px] lg:min-h-[700px] overflow-hidden rounded-none lg:rounded-[32px] shadow-[0_24px_64px_rgba(15,23,42,0.22)]">
+      <div className="fixed inset-0 top-[64px] z-0 overflow-hidden">
         {/* Hero background image */}
         <img
           src="/traillabhero.png"
@@ -774,11 +774,11 @@ export default function TrailLab() {
           className="absolute inset-0 h-full w-full object-cover object-center"
         />
         {/* Dark gradient overlay */}
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,20,40,0.65)_0%,rgba(10,20,40,0.45)_30%,rgba(10,20,40,0.78)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,20,40,0.70)_0%,rgba(10,20,40,0.50)_40%,rgba(10,20,40,0.85)_100%)]" />
         {/* Vignette */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(5,10,20,0.55)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_50%,rgba(5,10,20,0.60)_100%)]" />
 
-        <div className="relative z-10 px-6 py-8 lg:px-10 lg:py-12 flex flex-col h-full">
+        <div className="relative z-10 h-full px-6 py-6 lg:px-12 lg:py-8 flex flex-col">
           {/* Header row */}
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8">
             <div className="flex-1 min-w-0">
@@ -854,12 +854,30 @@ export default function TrailLab() {
 
           {/* Epic Stats Row */}
           <div className="flex flex-wrap gap-3 mb-8">
-            <StatBadge label="Trails" value={stats.trails} color="emerald" />
-            <StatBadge label="Drafts" value={stats.drafts} color="amber" />
-            <StatBadge label="Published" value={stats.published} color="sky" />
-            <StatBadge label="Minted" value={stats.minted} color="purple" />
-            <StatBadge label="Views" value={stats.views.toLocaleString()} color="slate" />
-            <StatBadge label="Reputation" value={stats.reputation.toLocaleString()} color="rose" />
+            <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/20 px-4 py-2.5 backdrop-blur-md text-center shadow-lg shadow-emerald-500/20">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">Trails</p>
+              <p className="text-xl font-bold text-emerald-300 mt-0.5">{stats.trails}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/30 bg-amber-500/20 px-4 py-2.5 backdrop-blur-md text-center shadow-lg shadow-amber-500/20">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">Drafts</p>
+              <p className="text-xl font-bold text-amber-300 mt-0.5">{stats.drafts}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/30 bg-sky-500/20 px-4 py-2.5 backdrop-blur-md text-center shadow-lg shadow-sky-500/20">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">Published</p>
+              <p className="text-xl font-bold text-sky-300 mt-0.5">{stats.published}</p>
+            </div>
+            <div className="rounded-2xl border border-purple-400/30 bg-purple-500/20 px-4 py-2.5 backdrop-blur-md text-center shadow-lg shadow-purple-500/20">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">Minted</p>
+              <p className="text-xl font-bold text-purple-300 mt-0.5">{stats.minted}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-400/30 bg-slate-500/20 px-4 py-2.5 backdrop-blur-md text-center shadow-lg shadow-slate-500/20">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">Views</p>
+              <p className="text-xl font-bold text-slate-300 mt-0.5">{stats.views.toLocaleString()}</p>
+            </div>
+            <div className="rounded-2xl border border-rose-400/30 bg-rose-500/20 px-4 py-2.5 backdrop-blur-md text-center shadow-lg shadow-rose-500/20">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">Reputation</p>
+              <p className="text-xl font-bold text-rose-300 mt-0.5">{stats.reputation.toLocaleString()}</p>
+            </div>
           </div>
 
           {/* Gallery Preview Grid in Hero */}
@@ -875,20 +893,54 @@ export default function TrailLab() {
               </div>
             ) : (
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 h-full overflow-y-auto pr-2">
-                {filteredTrails.slice(0, 12).map((trail, index) => (
-                  <TrailPreviewCard
-                    key={trail.id}
-                    trail={trail}
-                    selected={trail.id === selectedTrailId}
-                    spotlight={index === 0}
-                    onClick={() => setSelectedTrailId(trail.id)}
-                  />
-                ))}
+                {filteredTrails.slice(0, 12).map((trail, index) => {
+                  const status = trail.minted ? 'minted' : trail.published ? 'published' : 'draft';
+                  const isSelected = trail.id === selectedTrailId;
+                  const isSpotlight = index === 0;
+                  const statusColors = {
+                    minted: 'bg-amber-500 text-white',
+                    published: 'bg-emerald-500 text-white',
+                    draft: 'bg-white/20 text-white/80',
+                  };
+                  return (
+                    <button
+                      key={trail.id}
+                      onClick={() => setSelectedTrailId(trail.id)}
+                      className={`group relative overflow-hidden rounded-2xl border p-3 text-left transition-all hover:scale-[1.02] ${
+                        isSelected
+                          ? 'border-emerald-400 bg-emerald-500/20 ring-2 ring-emerald-400/50'
+                          : 'border-white/20 bg-white/10 hover:bg-white/20'
+                      } ${isSpotlight ? 'ring-1 ring-white/30' : ''}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-white truncate">{trail.name}</p>
+                          <p className="text-xs text-white/50 truncate">{trail.distanceKm > 0 ? `${trail.distanceKm.toFixed(1)} km` : 'No route'}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${statusColors[status]}`}>
+                          {status}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-3 text-[10px] text-white/60">
+                        <span>{trail.points.length} pts</span>
+                        <span>{trail.pois.length} POIs</span>
+                        <span>{trail.views} views</span>
+                      </div>
+                      {isSpotlight && (
+                        <div className="absolute -right-2 -top-2 h-8 w-8 bg-emerald-400/30 rounded-full blur-xl" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* ─── Main Content (Scrolls below hero) ─── */}
+      <div className="relative z-10 mt-[calc(100vh-64px)] bg-gradient-to-b from-slate-50 via-white to-slate-50 min-h-screen">
+        <div className="px-6 py-8 lg:px-12 lg:py-10 space-y-8">
 
       {(notice || error) && (
         <div className={`rounded-[24px] border px-4 py-3 text-sm backdrop-blur-xl ${error ? 'border-rose-200 bg-rose-50/90 text-rose-700' : 'border-emerald-200 bg-emerald-50/90 text-emerald-700'}`}>
@@ -1285,6 +1337,8 @@ export default function TrailLab() {
             </div>
           </GlassPanel>
         </div>
+
+      </div>
       </div>
 
       <WarningModal
@@ -1342,21 +1396,20 @@ function StatCard({ label, value, note }: { label: string; value: string; note: 
   );
 }
 
-const COLOR_STYLES: Record<string, { bg: string; border: string; text: string; glow: string }> = {
-  emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-400/30', text: 'text-emerald-300', glow: 'shadow-emerald-500/20' },
-  amber: { bg: 'bg-amber-500/20', border: 'border-amber-400/30', text: 'text-amber-300', glow: 'shadow-amber-500/20' },
-  sky: { bg: 'bg-sky-500/20', border: 'border-sky-400/30', text: 'text-sky-300', glow: 'shadow-sky-500/20' },
-  purple: { bg: 'bg-purple-500/20', border: 'border-purple-400/30', text: 'text-purple-300', glow: 'shadow-purple-500/20' },
-  slate: { bg: 'bg-slate-500/20', border: 'border-slate-400/30', text: 'text-slate-300', glow: 'shadow-slate-500/20' },
-  rose: { bg: 'bg-rose-500/20', border: 'border-rose-400/30', text: 'text-rose-300', glow: 'shadow-rose-500/20' },
-};
-
-function StatBadge({ label, value, color }: { label: string; value: number | string; color: keyof typeof COLOR_STYLES }) {
-  const styles = COLOR_STYLES[color];
+function StatBadge(props: { label: string; value: number | string; color: string }) {
+  const colorMap: Record<string, { border: string; bg: string; text: string; glow: string }> = {
+    emerald: { border: 'border-emerald-400/30', bg: 'bg-emerald-500/20', text: 'text-emerald-300', glow: 'shadow-emerald-500/20' },
+    amber: { border: 'border-amber-400/30', bg: 'bg-amber-500/20', text: 'text-amber-300', glow: 'shadow-amber-500/20' },
+    sky: { border: 'border-sky-400/30', bg: 'bg-sky-500/20', text: 'text-sky-300', glow: 'shadow-sky-500/20' },
+    purple: { border: 'border-purple-400/30', bg: 'bg-purple-500/20', text: 'text-purple-300', glow: 'shadow-purple-500/20' },
+    slate: { border: 'border-slate-400/30', bg: 'bg-slate-500/20', text: 'text-slate-300', glow: 'shadow-slate-500/20' },
+    rose: { border: 'border-rose-400/30', bg: 'bg-rose-500/20', text: 'text-rose-300', glow: 'shadow-rose-500/20' },
+  };
+  const c = colorMap[props.color] || colorMap.emerald;
   return (
-    <div className={`rounded-2xl border ${styles.border} ${styles.bg} px-4 py-2.5 backdrop-blur-md text-center shadow-lg ${styles.glow}`}>
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">{label}</p>
-      <p className={`text-xl font-bold ${styles.text} mt-0.5`}>{value}</p>
+    <div className={`rounded-2xl border ${c.border} ${c.bg} px-4 py-2.5 backdrop-blur-md text-center shadow-lg ${c.glow}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/70">{props.label}</p>
+      <p className={`text-xl font-bold ${c.text} mt-0.5`}>{props.value}</p>
     </div>
   );
 }

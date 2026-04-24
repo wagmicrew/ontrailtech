@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from config import get_settings
-from routers import auth, users, pois, routes, tokens, admin, onboarding, friendpass, identity, referrals, runners, graph, aura, store, mobile, expo_admin, apps, alchemy, poifi
+from routers import auth, users, pois, routes, tokens, admin, onboarding, friendpass, identity, referrals, runners, graph, aura, store, mobile, expo_admin, apps, alchemy, poifi, lens_admin, graphql_designer, contract_admin
 from kernel.ws_router import router as kernel_ws_router
 from kernel.kernel_router import router as kernel_rest_router
 from error_handlers import register_error_handlers
@@ -50,6 +50,9 @@ app.include_router(expo_admin.router, prefix="/admin/expo", tags=["Expo Admin"])
 app.include_router(apps.router, prefix="/admin/apps", tags=["Apps"])
 app.include_router(alchemy.router, prefix="/admin/alchemy", tags=["Alchemy"])
 app.include_router(poifi.router, prefix="/poifi", tags=["POI-Fi"])
+app.include_router(lens_admin.router, prefix="/api/admin", tags=["Lens Admin"])
+app.include_router(graphql_designer.router, prefix="/api/admin", tags=["GraphQL Designer"])
+app.include_router(contract_admin.router, prefix="/api/admin", tags=["Contract Admin"])
 app.include_router(kernel_ws_router)
 app.include_router(kernel_rest_router)
 

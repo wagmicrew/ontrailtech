@@ -335,39 +335,24 @@ export default function Explore() {
     }
   };
 
-  // Search for users by username
+  // Search for users by username using backend API
   const searchUsers = async (query: string): Promise<SearchResult[]> => {
     if (!query.trim() || query.length < 2) return [];
     try {
-      // Try exact match first
-      const runner = await api.getRunner(query);
-      if (runner && runner.username) {
-        return [{
-          type: 'user' as const,
-          username: runner.username,
-          avatar_url: runner.avatar_url,
-          totalAura: runner.totalAura || '0',
-          auraLevel: runner.auraLevel || 'Low',
-        }];
-      }
-    } catch {
-      // No exact match found
-    }
-    // Search through cached topRunners for partial matches
-    const matches = topRunners
-      .filter(r => r.username.toLowerCase().includes(query.toLowerCase()))
-      .slice(0, 3)
-      .map(r => ({
+      const users = await api.searchUsers(query, 5);
+      return users.map(u => ({
         type: 'user' as const,
-        username: r.username,
-        avatar_url: r.avatar_url,
-        totalAura: r.totalAura,
-        auraLevel: r.auraLevel,
+        username: u.username,
+        avatar_url: u.avatar_url,
+        totalAura: u.totalAura || '0',
+        auraLevel: u.auraLevel || 'Low',
       }));
-    return matches;
+    } catch {
+      return [];
+    }
   };
 
-  // Perform unified search
+  // Perform unified search — prioritizes: Users → Locations/POIs/Routes
   const performSearch = async (query: string) => {
     if (!query.trim() || query.length < 2) {
       setSearchResults([]);
@@ -375,18 +360,21 @@ export default function Explore() {
     }
     setSearchLoading(true);
 
-    const promises: Promise<SearchResult[]>[] = [];
+    let allResults: SearchResult[] = [];
 
-    if (activeSearchType === 'all' || activeSearchType === 'pois' || activeSearchType === 'routes') {
-      promises.push(geocodeLocation(query));
-    }
+    // 1. Search USERS first (highest priority)
     if (activeSearchType === 'all' || activeSearchType === 'users') {
-      promises.push(searchUsers(query));
+      const users = await searchUsers(query);
+      allResults = [...allResults, ...users];
     }
 
-    const results = await Promise.all(promises);
-    const combined = results.flat();
-    setSearchResults(combined);
+    // 2. Search LOCATIONS/POIs/Routes second
+    if (activeSearchType === 'all' || activeSearchType === 'pois' || activeSearchType === 'routes') {
+      const locations = await geocodeLocation(query);
+      allResults = [...allResults, ...locations];
+    }
+
+    setSearchResults(allResults);
     setSearchLoading(false);
   };
 
@@ -510,9 +498,9 @@ export default function Explore() {
         {/* Subtle vignette sides */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(5,10,20,0.45)_100%)]" />
 
-        <div className="relative z-10 px-6 pt-6 pb-4 lg:px-8 flex flex-col h-full">
-          {/* Title row */}
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-4 shrink-0">
+        <div className="relative z-10 pt-6 pb-4 flex flex-col h-full">
+          {/* Title row - with side padding for content */}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-4 shrink-0 px-4 sm:px-6 lg:px-8">
             <div className="flex-1 min-w-0">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 backdrop-blur-sm mb-3">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -574,10 +562,33 @@ export default function Explore() {
                       </div>
                     ) : (
                       <div className="py-2">
-                        {/* Group results by type */}
-                        {searchResults.filter((r): r is Extract<SearchResult, { type: 'location' }> => r.type === 'location').length > 0 && (
+                        {/* Group results by type — USERS first, then LOCATIONS */}
+                        {searchResults.filter((r): r is Extract<SearchResult, { type: 'user' }> => r.type === 'user').length > 0 && (
                           <div className="px-3 py-2">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Locations & Routes</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-sky-400">Runners</span>
+                            {searchResults.filter((r): r is Extract<SearchResult, { type: 'user' }> => r.type === 'user').map((result, idx) => (
+                              <button
+                                key={`user-${idx}`}
+                                onClick={() => handleSelectResult(result)}
+                                className="w-full mt-1 flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-left group"
+                              >
+                                <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 flex items-center justify-center text-white text-xs font-bold overflow-hidden relative">
+                                  {result.username?.[0]?.toUpperCase()}
+                                  {result.avatar_url && <img src={result.avatar_url} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-white group-hover:text-sky-300 transition-colors truncate">@{result.username}</p>
+                                  <p className="text-xs text-white/50">Aura {parseFloat(result.totalAura).toFixed(1)} · {result.auraLevel}</p>
+                                </div>
+                                <span className="text-[10px] text-white/30 shrink-0">Profile</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {searchResults.filter((r): r is Extract<SearchResult, { type: 'location' }> => r.type === 'location').length > 0 && (
+                          <div className={`px-3 py-2 ${searchResults.filter((r): r is Extract<SearchResult, { type: 'user' }> => r.type === 'user').length > 0 ? 'border-t border-white/10' : ''}`}>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Locations, POIs & Routes</span>
                             {searchResults.filter((r): r is Extract<SearchResult, { type: 'location' }> => r.type === 'location').map((result, idx) => (
                               <button
                                 key={`loc-${idx}`}
@@ -595,29 +606,6 @@ export default function Explore() {
                                   <p className="text-xs text-white/50 truncate">{result.display_name}</p>
                                 </div>
                                 <span className="text-[10px] text-white/30 shrink-0">Go</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {searchResults.filter((r): r is Extract<SearchResult, { type: 'user' }> => r.type === 'user').length > 0 && (
-                          <div className="px-3 py-2 border-t border-white/10">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-sky-400">Runners</span>
-                            {searchResults.filter((r): r is Extract<SearchResult, { type: 'user' }> => r.type === 'user').map((result, idx) => (
-                              <button
-                                key={`user-${idx}`}
-                                onClick={() => handleSelectResult(result)}
-                                className="w-full mt-1 flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-left group"
-                              >
-                                <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 flex items-center justify-center text-white text-xs font-bold overflow-hidden relative">
-                                  {result.username?.[0]?.toUpperCase()}
-                                  {result.avatar_url && <img src={result.avatar_url} alt="" className="absolute inset-0 w-full h-full object-cover" />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-white group-hover:text-sky-300 transition-colors truncate">@{result.username}</p>
-                                  <p className="text-xs text-white/50">Aura {parseFloat(result.totalAura).toFixed(1)} · {result.auraLevel}</p>
-                                </div>
-                                <span className="text-[10px] text-white/30 shrink-0">Profile</span>
                               </button>
                             ))}
                           </div>
@@ -660,7 +648,7 @@ export default function Explore() {
           </div>
 
           {/* Map card — elevated glass panel so it floats above the hero — grows to fill space */}
-          <div className="overflow-hidden rounded-2xl border border-white/20 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-sm flex flex-col flex-1 min-h-0">
+          <div className="mx-4 sm:mx-6 lg:mx-8 overflow-hidden rounded-2xl border border-white/20 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-sm flex flex-col flex-1 min-h-0">
             {/* Map toolbar */}
             <div className="flex flex-col gap-2 border-b border-white/10 bg-black/30 px-5 py-3 md:flex-row md:items-center md:justify-between backdrop-blur-md shrink-0">
               <div>
