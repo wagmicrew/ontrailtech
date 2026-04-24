@@ -1,4 +1,17 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://api.ontrail.tech';
+// Detect if we're on a subdomain (runner profile) or main domain
+const isSubdomain = () => {
+  const hostname = window.location.hostname;
+  return hostname !== 'ontrail.tech' && 
+         hostname !== 'www.ontrail.tech' && 
+         hostname !== 'app.ontrail.tech' &&
+         hostname !== 'api.ontrail.tech' &&
+         hostname !== 'localhost';
+};
+
+// Use /api/ prefix on subdomains, root path on main domain
+const API_BASE = isSubdomain() 
+  ? `${window.location.protocol}//${window.location.host}/api`
+  : (import.meta.env.VITE_API_URL || 'https://api.ontrail.tech');
 
 const MEDIA_KEYS = new Set(['avatar_url', 'header_image_url', 'avatarUrl', 'headerImageUrl']);
 

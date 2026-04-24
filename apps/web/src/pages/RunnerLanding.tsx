@@ -9,10 +9,60 @@ import { api } from '../lib/api';
 
 // --- Types ---
 
+type ViewerState = 'guest' | 'friend' | 'owner';
+
+interface ViewerRelationship {
+  state: ViewerState;
+  is_authenticated: boolean;
+  is_friendpass_holder: boolean;
+  friendpass_count: number;
+  can_buy_friendpass: boolean;
+  can_sell_friendpass: boolean;
+}
+
+interface TeaserContent {
+  locked_pois_count: number;
+  locked_routes_count: number;
+  locked_messages_count: number;
+  has_bonding_curve: boolean;
+}
+
+interface UnlockedContent {
+  pois: Array<{
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    rarity: string;
+  }>;
+  routes: Array<{
+    id: string;
+    name: string;
+    difficulty: string;
+    distance_km: number;
+  }>;
+  messages: Array<{
+    id: string;
+    text: string;
+    created_at: string;
+  }>;
+  bonding_curve_visible: boolean;
+  friendpass_holders: Array<{
+    owner_id: string;
+    username: string | null;
+    avatar_url: string | null;
+    passes: number;
+    purchased_at: string;
+  }>;
+}
+
 interface RunnerProfileData {
   id: string;
   username: string;
   avatarUrl: string | null;
+  headerImageUrl?: string | null;
+  bio?: string | null;
+  wallet_address?: string | null;
   reputationScore: number;
   rank: number;
   tokenStatus: 'bonding_curve' | 'tge_ready' | 'launched';
@@ -37,6 +87,10 @@ interface RunnerProfileData {
   auraLevel?: AuraLevel;
   ancientSupporterCount?: number;
   totalAura?: string;
+  // Three-state profile system
+  viewer: ViewerRelationship;
+  teaser: TeaserContent;
+  unlocked: UnlockedContent;
 }
 
 interface BoostResult {
@@ -378,9 +432,13 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
   const [boostResult, setBoostResult] = useState<BoostResult | null>(null);
   const [boostLoading, setBoostLoading] = useState(false);
 
-  const { login, isConnected, isLoading: authLoading, username: loggedUsername } = useAuth();
+  const { login, isLoading: authLoading } = useAuth();
 
-  const isOwnProfile = isConnected && loggedUsername === resolvedUsername;
+  // Three-state profile system from API
+  const viewerState = profile?.viewer.state ?? 'guest';
+  const isGuest = viewerState === 'guest';
+  const isFriend = viewerState === 'friend';
+  const isOwner = viewerState === 'owner';
 
   const handleCTA = useCallback(() => {
     setShowJoinPanel(true);
@@ -457,18 +515,32 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
         <a href="https://ontrail.tech" className="flex items-center gap-2">
           <img src="/ontrail-logo.png" alt="OnTrail" className="h-6 opacity-85" />
         </a>
-        {isConnected ? (
-          <span className="text-xs text-emerald-600 font-medium bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-            ✓ Signed in
-          </span>
-        ) : (
-          <button
-            onClick={handleSignIn}
-            className="text-xs font-semibold text-slate-600 hover:text-emerald-600 transition-colors"
-          >
-            Sign in
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* State badge */}
+          {isFriend && (
+            <span className="text-xs text-violet-600 font-medium bg-violet-50 px-3 py-1 rounded-full border border-violet-200">
+              ✓ FriendPass Holder
+            </span>
+          )}
+          {isOwner && (
+            <span className="text-xs text-amber-600 font-medium bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+              👑 Owner
+            </span>
+          )}
+          {isGuest && profile?.viewer.is_authenticated ? (
+            <span className="text-xs text-slate-600 font-medium bg-slate-50 px-3 py-1 rounded-full border border-slate-200">
+              Visitor
+            </span>
+          ) : null}
+          {isGuest && !profile?.viewer.is_authenticated ? (
+            <button
+              onClick={handleSignIn}
+              className="text-xs font-semibold text-slate-600 hover:text-emerald-600 transition-colors"
+            >
+              Sign in
+            </button>
+          ) : null}
+        </div>
       </header>
 
       {/* Cover banner */}
@@ -511,14 +583,32 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
               </motion.button>
             </div>
 
-            {isOwnProfile ? (
+            {/* Three-state action buttons */}
+            {isOwner ? (
               <a
                 href="https://app.ontrail.tech/profile"
                 className="border border-slate-300 text-slate-700 px-5 py-2 rounded-xl font-semibold text-sm hover:border-slate-400 transition-colors bg-white"
               >
                 Edit profile
               </a>
-            ) : !isConnected ? (
+            ) : isFriend ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCTA}
+                  className="bg-gradient-to-r from-violet-500 to-purple-400 text-white px-5 py-2 rounded-xl font-semibold text-sm shadow-lg shadow-violet-200 hover:shadow-violet-300 transition-all hover:-translate-y-0.5"
+                >
+                  Buy More
+                </button>
+                {profile.viewer.can_sell_friendpass && (
+                  <button
+                    onClick={handleCTA}
+                    className="border border-slate-300 text-slate-600 px-3 py-2 rounded-xl font-semibold text-sm hover:border-slate-400 transition-colors bg-white"
+                  >
+                    Sell
+                  </button>
+                )}
+              </div>
+            ) : isGuest ? (
               <motion.button
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -618,10 +708,30 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
             </div>
           </div>
 
-          {isConnected ? (
-            <button className="w-full bg-gradient-to-r from-emerald-500 to-green-400 text-white py-3 rounded-xl font-semibold shadow-md shadow-emerald-100 hover:shadow-emerald-200 transition-all hover:-translate-y-0.5">
-              Buy FriendPass · {friendPass.currentPrice} ETH
-            </button>
+          {isOwner ? (
+            <a
+              href="https://app.ontrail.tech/profile"
+              className="block w-full text-center bg-slate-100 text-slate-700 py-3 rounded-xl font-semibold hover:bg-slate-200 transition-colors"
+            >
+              Manage in Dashboard
+            </a>
+          ) : isFriend ? (
+            <div className="flex gap-2">
+              <button
+                onClick={handleCTA}
+                className="flex-1 bg-gradient-to-r from-violet-500 to-purple-400 text-white py-3 rounded-xl font-semibold shadow-md shadow-violet-100 hover:shadow-violet-200 transition-all hover:-translate-y-0.5"
+              >
+                Buy More · {friendPass.currentPrice} ETH
+              </button>
+              {profile.viewer.can_sell_friendpass && (
+                <button
+                  onClick={handleCTA}
+                  className="px-4 bg-slate-100 text-slate-600 rounded-xl font-semibold hover:bg-slate-200 transition-colors"
+                >
+                  Sell
+                </button>
+              )}
+            </div>
           ) : (
             <button
               onClick={handleCTA}
@@ -671,15 +781,181 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
-          className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-28"
+          className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-4"
         >
           <h2 className="font-bold text-slate-900 mb-4">Live activity</h2>
           <ActivityFeed items={activityFeed} />
         </motion.div>
+
+        {/* === GUEST TEASER SECTION === */}
+        {isGuest && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 shadow-sm p-5 mb-4"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-slate-900">🔒 Unlock {profile.username}'s Trail</h2>
+              <span className="text-xs text-slate-500">FriendPass Required</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-white rounded-xl p-3 text-center border border-slate-200">
+                <span className="text-2xl">📍</span>
+                <p className="text-lg font-bold text-slate-700">{profile.teaser.locked_pois_count}</p>
+                <p className="text-xs text-slate-500">Hidden POIs</p>
+              </div>
+              <div className="bg-white rounded-xl p-3 text-center border border-slate-200">
+                <span className="text-2xl">🗺️</span>
+                <p className="text-lg font-bold text-slate-700">{profile.teaser.locked_routes_count}</p>
+                <p className="text-xs text-slate-500">Secret Routes</p>
+              </div>
+              <div className="bg-white rounded-xl p-3 text-center border border-slate-200">
+                <span className="text-2xl">💬</span>
+                <p className="text-lg font-bold text-slate-700">{profile.teaser.locked_messages_count}+</p>
+                <p className="text-xs text-slate-500">Messages</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              Buy a FriendPass to unlock exclusive content and see {profile.username}'s hidden trails, POIs, and private messages.
+            </p>
+            <button
+              onClick={handleCTA}
+              className="w-full bg-gradient-to-r from-emerald-500 to-green-400 text-white py-3 rounded-xl font-semibold shadow-md shadow-emerald-100 hover:shadow-emerald-200 transition-all hover:-translate-y-0.5"
+            >
+              Unlock for {friendPass.currentPrice} ETH →
+            </button>
+          </motion.div>
+        )}
+
+        {/* === FRIEND UNLOCKED CONTENT === */}
+        {(isFriend || isOwner) && profile.unlocked.friendpass_holders.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-4"
+          >
+            <h2 className="font-bold text-slate-900 mb-4">🤝 FriendPass Holders</h2>
+            <div className="space-y-3">
+              {profile.unlocked.friendpass_holders.slice(0, 5).map((holder, idx) => (
+                <div key={holder.owner_id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center text-white font-bold">
+                    {holder.username?.[0]?.toUpperCase() || '?'}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{holder.username || 'Anonymous'}</p>
+                    <p className="text-xs text-slate-500">{holder.passes} pass{holder.passes !== 1 ? 'es' : ''}</p>
+                  </div>
+                  <span className="text-xs text-slate-400">#{idx + 1}</span>
+                </div>
+              ))}
+            </div>
+            {profile.unlocked.friendpass_holders.length > 5 && (
+              <p className="text-xs text-slate-500 text-center mt-3">
+                +{profile.unlocked.friendpass_holders.length - 5} more holders
+              </p>
+            )}
+          </motion.div>
+        )}
+
+        {/* === FRIEND/OWNER UNLOCKED POIs === */}
+        {(isFriend || isOwner) && profile.unlocked.pois.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.42 }}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-4"
+          >
+            <h2 className="font-bold text-slate-900 mb-4">📍 Unlocked POIs</h2>
+            <div className="space-y-3">
+              {profile.unlocked.pois.map((poi) => (
+                <div key={poi.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-2xl">
+                    {poi.rarity === 'legendary' ? '👑' : poi.rarity === 'epic' ? '💎' : poi.rarity === 'rare' ? '🏆' : '📍'}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{poi.name}</p>
+                    <p className="text-xs text-slate-500 capitalize">{poi.rarity} POI</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* === FRIEND/OWNER UNLOCKED ROUTES === */}
+        {(isFriend || isOwner) && profile.unlocked.routes.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.44 }}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-4"
+          >
+            <h2 className="font-bold text-slate-900 mb-4">🗺️ Exclusive Routes</h2>
+            <div className="space-y-3">
+              {profile.unlocked.routes.map((route) => (
+                <div key={route.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-2xl">🏃</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{route.name}</p>
+                    <p className="text-xs text-slate-500 capitalize">{route.difficulty} • {route.distance_km}km</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* === OWNER ADMIN CONTROLS === */}
+        {isOwner && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.46 }}
+            className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200 shadow-sm p-5 mb-28"
+          >
+            <h2 className="font-bold text-slate-900 mb-4">👑 Owner Controls</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <a
+                href="https://app.ontrail.tech/profile"
+                className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-amber-200 hover:border-amber-300 transition-colors"
+              >
+                <span className="text-2xl">✏️</span>
+                <span className="text-sm font-semibold text-slate-700">Edit Profile</span>
+              </a>
+              <a
+                href="https://app.ontrail.tech/profile?tab=wallets"
+                className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-amber-200 hover:border-amber-300 transition-colors"
+              >
+                <span className="text-2xl">👛</span>
+                <span className="text-sm font-semibold text-slate-700">Manage Wallets</span>
+              </a>
+              <a
+                href="https://app.ontrail.tech/profile?tab=store"
+                className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-amber-200 hover:border-amber-300 transition-colors"
+              >
+                <span className="text-2xl">🛒</span>
+                <span className="text-sm font-semibold text-slate-700">Store</span>
+              </a>
+              <button
+                onClick={handleCTA}
+                className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-amber-200 hover:border-amber-300 transition-colors"
+              >
+                <span className="text-2xl">💬</span>
+                <span className="text-sm font-semibold text-slate-700">Add Message</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Spacer for fixed bottom CTA */}
+        {isGuest && <div className="h-24" />}
       </div>
 
-      {/* Sticky bottom CTA for guests */}
-      {!isConnected && (
+      {/* === STICKY BOTTOM CTA === */}
+      {/* Guest CTA */}
+      {isGuest && (
         <motion.div
           initial={{ y: 80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -695,6 +971,27 @@ export default function RunnerLanding({ hostname }: RunnerLandingProps) {
             className="shrink-0 bg-gradient-to-r from-emerald-500 to-green-400 text-white px-5 py-2.5 rounded-xl font-semibold text-sm shadow-lg shadow-emerald-200 hover:shadow-emerald-300 transition-all hover:-translate-y-0.5"
           >
             Join OnTrail →
+          </button>
+        </motion.div>
+      )}
+
+      {/* Friend CTA */}
+      {isFriend && (
+        <motion.div
+          initial={{ y: 80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.6, type: 'spring', damping: 20, stiffness: 180 }}
+          className="fixed bottom-0 inset-x-0 z-30 bg-violet-50/95 backdrop-blur-md border-t border-violet-200 shadow-2xl px-4 py-4 flex items-center gap-3"
+        >
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-violet-900 truncate">You're a FriendPass Holder!</p>
+            <p className="text-xs text-violet-600">{profile.viewer.friendpass_count} pass{profile.viewer.friendpass_count !== 1 ? 'es' : ''} · Exclusive access unlocked</p>
+          </div>
+          <button
+            onClick={handleCTA}
+            className="shrink-0 bg-gradient-to-r from-violet-500 to-purple-400 text-white px-5 py-2.5 rounded-xl font-semibold text-sm shadow-lg shadow-violet-200 hover:shadow-violet-300 transition-all hover:-translate-y-0.5"
+          >
+            Buy More →
           </button>
         </motion.div>
       )}

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../lib/api';
 
 const fadeUp = {
   initial: { opacity: 0, y: 24 },
@@ -19,16 +20,19 @@ const platformStats = [
   { value: '98k+', label: 'Routes completed', accent: 'border-amber-300/30 bg-gradient-to-br from-amber-300/20 via-orange-300/10 to-white/20' },
 ];
 
-const featuredRunner = {
-  name: 'Joel Hansen',
-  username: 'hansen',
-  avatar: 'https://api.ontrail.tech/media/64a92e94-2199-45aa-ad52-c2e230907aa8/profile/eaea0ef81a7a4e009c17ffe576a8eb4a.png',
-  rank: 'Rank #1',
-  status: 'Bonding curve live',
-  handle: 'hansen.ontrail.tech',
-  friendPass: '0/100 passes open',
-  price: '0.0010 ETH',
-};
+interface TopRunner {
+  runnerId: string;
+  username: string;
+  avatar_url?: string | null;
+  totalAura: string;
+  auraLevel: string;
+  ancientSupporterCount: number;
+  rank?: number;
+  handle?: string;
+  price?: string;
+  friendPass?: string;
+  status?: string;
+}
 
 const featureCards = [
   {
@@ -36,18 +40,21 @@ const featureCards = [
     desc: 'Turn real movement, routes, and visits into reputation that can be tracked and trusted.',
     accent: 'from-emerald-500/15 to-teal-500/5',
     icon: 'bg-emerald-500',
+    img: '/verified-activity-icon.png',
   },
   {
     title: 'Professional creator profiles',
     desc: 'Give each runner a digital home with identity, milestones, and performance-backed social proof.',
     accent: 'from-sky-500/15 to-cyan-500/5',
     icon: 'bg-sky-500',
+    img: '/creator-profiles-icon.png',
   },
   {
     title: 'Tokenized community upside',
     desc: 'Support emerging athletes early through transparent bonding-curve launches and on-chain rewards.',
     accent: 'from-violet-500/15 to-fuchsia-500/5',
     icon: 'bg-violet-500',
+    img: '/tokenized-community-icon.png',
   },
 ];
 
@@ -71,6 +78,40 @@ const workflow = [
 
 export default function Home() {
   const { isConnected, login } = useAuth();
+  const [topRunners, setTopRunners] = useState<TopRunner[]>([]);
+  const [featuredIdx, setFeaturedIdx] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    api.getRunnerLeaderboard()
+      .then((d: any) => {
+        const list: TopRunner[] = (d?.runners ?? d ?? []).slice(0, 10);
+        setTopRunners(list);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (topRunners.length < 2) return;
+    timerRef.current = setInterval(() => {
+      setDirection(1);
+      setFeaturedIdx((i) => (i + 1) % topRunners.length);
+    }, 4000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [topRunners]);
+
+  const goTo = (idx: number) => {
+    setDirection(idx > featuredIdx ? 1 : -1);
+    setFeaturedIdx(idx);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setDirection(1);
+      setFeaturedIdx((i) => (i + 1) % topRunners.length);
+    }, 4000);
+  };
+
+  const runner = topRunners[featuredIdx];
 
   return (
     <div className="bg-white text-slate-900">
@@ -140,44 +181,99 @@ export default function Home() {
 
             <motion.div variants={fadeUp} className="relative">
               <div className="rounded-[30px] border border-white/60 bg-white/20 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-2xl xl:p-5">
-                <div className="rounded-[24px] border border-white/70 bg-white/24 p-5 backdrop-blur-xl">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Featured runner</p>
-
-                  <div className="mt-4 flex items-center gap-4">
-                    <div className="h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-white/80 shadow-lg shadow-slate-900/10">
-                      <FeaturedRunnerAvatar src={featuredRunner.avatar} name={featuredRunner.name} />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-900">{featuredRunner.name}</h2>
-                      <p className="text-sm text-slate-600">@{featuredRunner.username} · {featuredRunner.status}</p>
-                    </div>
+                <div className="rounded-[24px] border border-white/70 bg-white/24 p-5 backdrop-blur-xl overflow-hidden">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Featured runner</p>
+                    {topRunners.length > 1 && (
+                      <span className="text-xs text-slate-400 tabular-nums">{featuredIdx + 1} / {topRunners.length}</span>
+                    )}
                   </div>
 
-                  <p className="mt-4 text-sm leading-6 text-slate-700">
-                    Live OnTrail profile with public rank, token launch status, and open supporter access.
-                  </p>
+                  <AnimatePresence mode="wait" custom={direction}>
+                    {runner ? (
+                      <motion.div
+                        key={runner.runnerId}
+                        custom={direction}
+                        initial={{ opacity: 0, x: direction * 40 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: direction * -40 }}
+                        transition={{ duration: 0.38, ease: 'easeInOut' }}
+                      >
+                        <div className="mt-4 flex items-center gap-4">
+                          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl ring-1 ring-white/80 shadow-lg shadow-slate-900/10">
+                            <FeaturedRunnerAvatar
+                              src={runner.avatar_url ?? ''}
+                              name={runner.username}
+                            />
+                          </div>
+                          <div>
+                            <h2 className="text-2xl font-bold text-slate-900 capitalize">{runner.username}</h2>
+                            <p className="text-sm text-slate-600">@{runner.username} · {runner.auraLevel} aura</p>
+                          </div>
+                        </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-emerald-200/80 bg-emerald-500/10 p-4 backdrop-blur">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Standing</p>
-                      <p className="mt-2 text-lg font-bold text-slate-900">{featuredRunner.rank}</p>
-                      <p className="mt-1 text-xs text-slate-600">{featuredRunner.handle}</p>
-                    </div>
-                    <div className="rounded-2xl border border-sky-200/80 bg-sky-500/10 p-4 backdrop-blur">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Current price</p>
-                      <p className="mt-2 text-lg font-bold text-slate-900">{featuredRunner.price}</p>
-                      <p className="mt-1 text-xs text-slate-600">{featuredRunner.friendPass}</p>
-                    </div>
-                  </div>
+                        <p className="mt-4 text-sm leading-6 text-slate-700">
+                          Live OnTrail profile with public rank, aura level, and open supporter access.
+                        </p>
 
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <Link to="/profile?runner=hansen" className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
-                      View Joel's profile
-                    </Link>
-                    <Link to="/leaderboard" className="rounded-2xl border border-slate-200 bg-white/55 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white/70">
-                      View leaderboard
-                    </Link>
-                  </div>
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-2xl border border-emerald-200/80 bg-emerald-500/10 p-4 backdrop-blur">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Standing</p>
+                            <p className="mt-2 text-lg font-bold text-slate-900">Rank #{featuredIdx + 1}</p>
+                            <p className="mt-1 text-xs text-slate-600">{runner.username}.ontrail.tech</p>
+                          </div>
+                          <div className="rounded-2xl border border-sky-200/80 bg-sky-500/10 p-4 backdrop-blur">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Aura score</p>
+                            <p className="mt-2 text-lg font-bold text-slate-900">{parseFloat(runner.totalAura).toFixed(1)}</p>
+                            <p className="mt-1 text-xs text-slate-600">{runner.ancientSupporterCount} Ancient supporter{runner.ancientSupporterCount !== 1 ? 's' : ''}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 flex flex-wrap gap-3">
+                          <Link
+                            to={`/profile?runner=${runner.username}`}
+                            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                          >
+                            View profile
+                          </Link>
+                          <Link to="/leaderboard" className="rounded-2xl border border-slate-200 bg-white/55 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white/70">
+                            View leaderboard
+                          </Link>
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <motion.div key="skeleton" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-4 space-y-3">
+                        <div className="flex items-center gap-4">
+                          <div className="h-16 w-16 rounded-2xl bg-slate-200 animate-pulse shrink-0" />
+                          <div className="space-y-2 flex-1">
+                            <div className="h-5 w-32 rounded-lg bg-slate-200 animate-pulse" />
+                            <div className="h-3 w-24 rounded-lg bg-slate-100 animate-pulse" />
+                          </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
+                          <div className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {topRunners.length > 1 && (
+                    <div className="mt-4 flex justify-center gap-1.5">
+                      {topRunners.map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => goTo(i)}
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            i === featuredIdx
+                              ? 'w-5 bg-emerald-600'
+                              : 'w-1.5 bg-slate-300 hover:bg-slate-400'
+                          }`}
+                          aria-label={`Go to runner ${i + 1}`}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -194,7 +290,13 @@ export default function Home() {
                 variants={fadeUp}
                 className={`rounded-3xl border border-slate-200/80 bg-gradient-to-br ${card.accent} p-6 shadow-sm shadow-slate-200/60`}
               >
-                <div className={`mb-4 h-11 w-11 rounded-2xl ${card.icon}`} />
+                {'img' in card && card.img ? (
+                  <div className="mb-4 h-11 w-11 rounded-2xl overflow-hidden shadow-sm">
+                    <img src={card.img} alt={card.title} className="h-full w-full object-cover" />
+                  </div>
+                ) : (
+                  <div className={`mb-4 h-11 w-11 rounded-2xl ${card.icon}`} />
+                )}
                 <h3 className="text-lg font-bold text-slate-900">{card.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{card.desc}</p>
               </motion.div>
@@ -203,31 +305,21 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="px-6 py-20 lg:px-8">
+      <section className="px-6 py-12 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="grid gap-10 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
-            <motion.div initial="initial" whileInView="animate" viewport={{ once: true }} variants={stagger}>
-              <motion.span variants={fadeUp} className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
-                Operating model
-              </motion.span>
-              <motion.h2 variants={fadeUp} className="mt-4 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-                Built with clean application patterns and a premium marketing shell
-              </motion.h2>
-              <motion.p variants={fadeUp} className="mt-4 max-w-xl text-base leading-7 text-slate-600">
-                The refreshed site combines a polished dashboard aesthetic with a strong product story so visitors immediately understand the value and trust the brand.
-              </motion.p>
-            </motion.div>
-
-            <motion.div initial="initial" whileInView="animate" viewport={{ once: true }} variants={stagger} className="grid gap-4 md:grid-cols-3">
-              {workflow.map((item) => (
-                <motion.div key={item.step} variants={fadeUp} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-sm font-bold text-emerald-600">{item.step}</div>
-                  <h3 className="mt-3 text-lg font-bold text-slate-900">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{item.desc}</p>
-                </motion.div>
-              ))}
-            </motion.div>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+            className="relative overflow-hidden rounded-[32px] shadow-[0_32px_80px_rgba(15,23,42,0.18)]"
+          >
+            <img
+              src="/operating-model-banner.png"
+              alt="OnTrail operating model — join, move, earn"
+              className="w-full h-auto object-cover"
+            />
+          </motion.div>
         </div>
       </section>
 

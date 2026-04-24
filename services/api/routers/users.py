@@ -67,12 +67,40 @@ class ActivityFeedItem(BaseModel):
     timeAgo: str
 
 
+class ViewerRelationship(BaseModel):
+    """Defines the relationship between the viewer and the profile owner."""
+    state: str  # 'guest' | 'owner' | 'friend'
+    is_authenticated: bool
+    is_friendpass_holder: bool = False
+    friendpass_count: int = 0
+    can_buy_friendpass: bool = True
+    can_sell_friendpass: bool = False
+
+
+class TeaserContent(BaseModel):
+    """Teaser content for guest viewers."""
+    locked_pois_count: int = 0
+    locked_routes_count: int = 0
+    locked_messages_count: int = 0
+    has_bonding_curve: bool = True
+
+
+class UnlockedContent(BaseModel):
+    """Unlocked content for friend/owner viewers."""
+    pois: list[dict] = []
+    routes: list[dict] = []
+    messages: list[dict] = []
+    bonding_curve_visible: bool = True
+    friendpass_holders: list[dict] = []
+
+
 class RunnerProfileData(BaseModel):
     id: str
     username: str
     avatarUrl: Optional[str]
     headerImageUrl: Optional[str] = None
     bio: Optional[str] = None
+    wallet_address: Optional[str] = None
     reputationScore: float
     rank: int
     tokenStatus: str
@@ -90,6 +118,11 @@ class RunnerProfileData(BaseModel):
     auraLevel: str = "None"
     ancientSupporterCount: int = 0
     totalAura: str = "0"
+    # Viewer relationship state (guest/owner/friend)
+    viewer: ViewerRelationship
+    # Content visibility based on relationship
+    teaser: TeaserContent
+    unlocked: UnlockedContent
 
 
 class UserProfile(BaseModel):
@@ -507,14 +540,21 @@ async def change_password(
 async def get_runner_profile_aggregated(
     username: str,
     db: AsyncSession = Depends(get_db),
+    viewer: User | None = Depends(optional_current_user),
 ):
     """
-    Aggregated runner profile endpoint for the first-time user journey landing page.
+    Aggregated runner profile endpoint with three-state visibility:
+    - Guest: Teaser content with CTAs to join/buy FriendPass
+    - Friend: Unlocked content for FriendPass holders
+    - Owner: Full admin access to manage profile
+
     Returns reputation, rank, token status, FriendPass supply + cached price, and activity feed.
-    Full response cached in Redis with 60s TTL.
+    Full response cached in Redis with 60s TTL (per-viewer-state cache key).
     FriendPass price cached separately with 5-10s TTL.
     """
-    cache_key = f"runner_profile:{username.lower()}"
+    # Determine viewer relationship for cache key
+    viewer_id = str(viewer.id) if viewer else "guest"
+    cache_key = f"runner_profile:{username.lower()}:viewer:{viewer_id}"
     cached = await cache_get(cache_key)
     if cached:
         return RunnerProfileData(**cached)
@@ -528,6 +568,40 @@ async def get_runner_profile_aggregated(
         raise HTTPException(status_code=404, detail=f"Runner '{username}' not found")
 
     runner_id = user.id
+
+    # Determine viewer relationship state
+    is_authenticated = viewer is not None
+    is_owner = is_authenticated and str(viewer.id) == str(runner_id)
+
+    # Check if viewer holds FriendPass for this runner
+    friendpass_count = 0
+    is_friendpass_holder = False
+    if is_authenticated and not is_owner:
+        friendpass_count = await db.scalar(
+            select(func.sum(FriendPassHolding.passes))
+            .where(
+                FriendPassHolding.runner_id == runner_id,
+                FriendPassHolding.owner_id == viewer.id,
+                FriendPassHolding.sold == False,
+            )
+        ) or 0
+        is_friendpass_holder = friendpass_count > 0
+
+    # Determine relationship state
+    if is_owner:
+        relationship_state = "owner"
+    elif is_friendpass_holder:
+        relationship_state = "friend"
+    else:
+        relationship_state = "guest"
+
+    # Check if viewer can buy/sell FriendPass
+    can_buy = True
+    can_sell = is_friendpass_holder and friendpass_count > 0
+    if is_authenticated and not is_owner:
+        # Anti-whale check: max 5 passes per wallet
+        if friendpass_count >= 5:
+            can_buy = False
 
     # Rank
     rank = await _get_runner_rank(db, runner_id)
@@ -622,12 +696,70 @@ async def get_runner_profile_aggregated(
     ancient_supporter_count = aura_row.ancient_supporter_count if aura_row else 0
     total_aura = str(aura_row.total_aura) if aura_row else "0"
 
+    # Build content visibility based on relationship state
+    # Fetch POIs and routes counts for teaser
+    locked_pois_count = poi_count if relationship_state == "guest" else 0
+    locked_routes_count = route_count if relationship_state == "guest" else 0
+
+    # Build unlocked content for friends/owners
+    unlocked_pois = []
+    unlocked_routes = []
+    unlocked_messages = []
+    friendpass_holders_list = []
+
+    if relationship_state in ("friend", "owner"):
+        # Fetch actual POIs for this runner
+        poi_result = await db.execute(
+            select(POI).where(POI.owner_id == runner_id).limit(10)
+        )
+        for poi in poi_result.scalars().all():
+            unlocked_pois.append({
+                "id": str(poi.id),
+                "name": poi.name,
+                "latitude": poi.latitude,
+                "longitude": poi.longitude,
+                "rarity": poi.rarity,
+            })
+
+        # Fetch routes for this runner
+        route_result = await db.execute(
+            select(Route).where(Route.creator_id == runner_id).limit(10)
+        )
+        for route in route_result.scalars().all():
+            unlocked_routes.append({
+                "id": str(route.id),
+                "name": route.name,
+                "difficulty": route.difficulty,
+                "distance_km": route.distance_km,
+            })
+
+        # Fetch FriendPass holders for friends/owners
+        holders_result = await db.execute(
+            select(FriendPassHolding, User)
+            .join(User, User.id == FriendPassHolding.owner_id)
+            .where(
+                FriendPassHolding.runner_id == runner_id,
+                FriendPassHolding.sold == False,
+            )
+            .order_by(FriendPassHolding.purchased_at.desc())
+            .limit(20)
+        )
+        for h, u in holders_result.all():
+            friendpass_holders_list.append({
+                "owner_id": str(h.owner_id),
+                "username": u.username,
+                "avatar_url": u.avatar_url,
+                "passes": h.passes,
+                "purchased_at": h.purchased_at.isoformat() if h.purchased_at else None,
+            })
+
     profile = RunnerProfileData(
         id=str(user.id),
         username=user.username,
         avatarUrl=user.avatar_url,
         headerImageUrl=user.header_image_url,
         bio=user.bio,
+        wallet_address=user.wallet_address,
         reputationScore=round(user.reputation_score or 0.0, 2),
         rank=rank,
         tokenStatus=token_status,
@@ -652,6 +784,27 @@ async def get_runner_profile_aggregated(
         auraLevel=aura_level,
         ancientSupporterCount=ancient_supporter_count,
         totalAura=total_aura,
+        viewer=ViewerRelationship(
+            state=relationship_state,
+            is_authenticated=is_authenticated,
+            is_friendpass_holder=is_friendpass_holder,
+            friendpass_count=int(friendpass_count),
+            can_buy_friendpass=can_buy,
+            can_sell_friendpass=can_sell,
+        ),
+        teaser=TeaserContent(
+            locked_pois_count=locked_pois_count,
+            locked_routes_count=locked_routes_count,
+            locked_messages_count=3 if relationship_state == "guest" else 0,  # Teaser count
+            has_bonding_curve=token_status == "bonding_curve",
+        ),
+        unlocked=UnlockedContent(
+            pois=unlocked_pois,
+            routes=unlocked_routes,
+            messages=unlocked_messages,
+            bonding_curve_visible=relationship_state in ("friend", "owner"),
+            friendpass_holders=friendpass_holders_list,
+        ),
     )
 
     # Cache full profile (60s TTL) — exclude price_data which has its own TTL
