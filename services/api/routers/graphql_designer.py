@@ -515,3 +515,44 @@ async def seed_system_message_types(
         "message": f"Seeded {created_count} system message types",
         "created_count": created_count
     }
+
+
+# ── DB Schema Browser ──────────────────────────────────────────────────────────
+
+@router.get("/db/schema")
+async def get_db_schema(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all user tables with their column names and types for the visual field picker."""
+    from sqlalchemy import text
+    result = await db.execute(text("""
+        SELECT
+            c.table_name,
+            c.column_name,
+            c.data_type,
+            c.is_nullable,
+            c.column_default
+        FROM information_schema.columns c
+        JOIN information_schema.tables t
+          ON c.table_name = t.table_name
+         AND c.table_schema = t.table_schema
+        WHERE c.table_schema = 'public'
+          AND t.table_type = 'BASE TABLE'
+        ORDER BY c.table_name, c.ordinal_position
+    """))
+    rows = result.fetchall()
+
+    schema: dict = {}
+    for row in rows:
+        tbl = row[0]
+        if tbl not in schema:
+            schema[tbl] = []
+        schema[tbl].append({
+            "column": row[1],
+            "type": row[2],
+            "nullable": row[3] == "YES",
+            "default": row[4],
+        })
+
+    return [{"table": tbl, "columns": cols} for tbl, cols in sorted(schema.items())]

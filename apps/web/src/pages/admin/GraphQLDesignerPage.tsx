@@ -495,7 +495,7 @@ function TypeEditor({ type, onSave, onDelete, onClose }: {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="grid grid-cols-2 gap-0 h-full">
+        <div className="grid grid-cols-[1fr_220px_1fr] gap-0 h-full">
           {/* Left: form */}
           <div className="px-5 py-4 space-y-4 border-r border-slate-200 overflow-y-auto">
             <div>
@@ -570,6 +570,15 @@ function TypeEditor({ type, onSave, onDelete, onClose }: {
               </div>
               <p className="text-[10px] text-slate-400 mt-1">Drag rows to reorder • Enter to add field</p>
             </div>
+          </div>
+
+          {/* Center: DB schema picker */}
+          <div className="border-r border-slate-700 overflow-hidden">
+            <DbFieldPicker onPick={f => {
+              if (!form.fields.some(x => x.name === f.name)) {
+                setForm(prev => ({ ...prev, fields: [...prev.fields, f] }));
+              }
+            }} />
           </div>
 
           {/* Right: live preview */}
@@ -703,6 +712,85 @@ function TemplateEditor({ template, types, onSave, onDelete, onClose }: {
             </pre>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DbFieldPicker ────────────────────────────────────────────────────────────
+
+function DbFieldPicker({ onPick }: { onPick: (field: Field) => void }) {
+  const [schema, setSchema] = useState<{ table: string; columns: { column: string; type: string; nullable: boolean }[] }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get('/api/admin/db/schema')
+      .then(d => { setSchema(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  // Map postgres types → GraphQL types
+  const pgToGql = (pg: string): string => {
+    if (pg.includes('int') || pg === 'bigint' || pg === 'smallint') return 'Int';
+    if (pg.includes('float') || pg.includes('numeric') || pg.includes('decimal') || pg.includes('double')) return 'Float';
+    if (pg === 'boolean') return 'Boolean';
+    if (pg.includes('json')) return 'JSON';
+    if (pg.includes('timestamp') || pg.includes('date') || pg.includes('time')) return 'DateTime';
+    if (pg === 'uuid') return 'ID';
+    return 'String';
+  };
+
+  const filtered = search.trim()
+    ? schema.filter(t =>
+        t.table.includes(search.toLowerCase()) ||
+        t.columns.some(c => c.column.includes(search.toLowerCase()))
+      )
+    : schema;
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden bg-[#0f172a] rounded-xl border border-slate-700">
+      <div className="px-3 py-2.5 border-b border-slate-700 flex items-center gap-2">
+        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">🗄 DB Schema</span>
+      </div>
+      <div className="px-2 py-2 border-b border-slate-700">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter tables / columns…"
+          className="w-full rounded-lg bg-slate-800 border border-slate-600 px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {loading && <div className="text-xs text-slate-500 text-center py-6">Loading schema…</div>}
+        {!loading && filtered.length === 0 && <div className="text-xs text-slate-500 text-center py-6">No tables found</div>}
+        {filtered.map(t => (
+          <div key={t.table}>
+            <button
+              onClick={() => setExpanded(expanded === t.table ? null : t.table)}
+              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800 transition-colors text-left group">
+              <span className={`text-slate-500 text-[10px] transition-transform ${expanded === t.table ? 'rotate-90' : ''}`}>▶</span>
+              <span className="text-xs font-mono font-semibold text-slate-200 flex-1">{t.table}</span>
+              <span className="text-[10px] text-slate-500">{t.columns.length}</span>
+            </button>
+            {expanded === t.table && (
+              <div className="pb-1">
+                {t.columns
+                  .filter(c => !search || c.column.includes(search.toLowerCase()))
+                  .map(c => (
+                    <button key={c.column}
+                      onClick={() => onPick({ name: c.column, type: pgToGql(c.type), required: !c.nullable })}
+                      className="w-full flex items-center gap-2 pl-8 pr-3 py-1.5 hover:bg-indigo-900/40 transition-colors group/col text-left">
+                      <span className="flex-1 text-[11px] font-mono text-slate-300 group-hover/col:text-white">{c.column}</span>
+                      <span className={`text-[10px] font-mono ${typeColor(pgToGql(c.type))}`}>{pgToGql(c.type)}</span>
+                      {!c.nullable && <span className="text-[9px] text-rose-400">!</span>}
+                      <span className="text-[10px] text-indigo-400 opacity-0 group-hover/col:opacity-100">+ add</span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="px-3 py-2 border-t border-slate-700 text-[10px] text-slate-500">
+        Click any column to add it as a field
       </div>
     </div>
   );
