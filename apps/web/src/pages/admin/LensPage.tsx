@@ -151,6 +151,8 @@ export default function LensPage() {
   const [activeTab, setActiveTab] = useState('config');
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
   const [logsCopied, setLogsCopied] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showAuthSecret, setShowAuthSecret] = useState(false);
   const originalConsole = useRef<{ log: typeof console.log; warn: typeof console.warn; error: typeof console.error } | null>(null);
 
   useEffect(() => {
@@ -432,13 +434,19 @@ export default function LensPage() {
                 hint="Required for App Verification. Found in your Lens Developer dashboard."
                 source={{ href: 'https://developer.lens.xyz', label: 'Get API key' }}
               >
-                <input
-                  type="password"
-                  className={inputCls}
-                  value={config.lens_api_key || ''}
-                  onChange={(e) => setConfig({ ...config, lens_api_key: e.target.value || null })}
-                  placeholder="lens_api_…"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type={showApiKey ? 'text' : 'text'}
+                    className={inputCls}
+                    value={config.lens_api_key || ''}
+                    onChange={(e) => setConfig({ ...config, lens_api_key: e.target.value || null })}
+                    placeholder="lens_api_…"
+                    style={showApiKey ? {} : { WebkitTextSecurity: 'disc' } as React.CSSProperties}
+                  />
+                  <button type="button" onClick={() => setShowApiKey((v) => !v)} className="px-2 text-xs bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 whitespace-nowrap">
+                    {showApiKey ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </Field>
 
               <Field
@@ -452,7 +460,11 @@ export default function LensPage() {
                     value={config.auth_secret || ''}
                     onChange={(e) => setConfig({ ...config, auth_secret: e.target.value || null })}
                     placeholder="Random secret — keep private"
+                    style={showAuthSecret ? {} : { WebkitTextSecurity: 'disc' } as React.CSSProperties}
                   />
+                  <button type="button" onClick={() => setShowAuthSecret((v) => !v)} className="px-2 text-xs bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 whitespace-nowrap">
+                    {showAuthSecret ? 'Hide' : 'Show'}
+                  </button>
                   <button
                     type="button"
                     onClick={generateSecret}

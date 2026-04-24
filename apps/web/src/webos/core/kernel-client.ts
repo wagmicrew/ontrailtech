@@ -38,10 +38,10 @@ export function connectKernel() {
     setKernelConnected(false);
   };
 
-  socket.onclose = () => {
+  socket.onclose = (ev) => {
     setKernelConnected(false);
     socket = null;
-    if (!intentionalClose) {
+    if (!intentionalClose && ev.code !== 4001 && ev.code !== 4003) {
       reconnectTimer = setTimeout(connectKernel, 4000);
     }
   };

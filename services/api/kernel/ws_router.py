@@ -55,7 +55,8 @@ async def _auth_ws(token: str):
 async def kernel_ws(ws: WebSocket, token: str = Query(...)):
     user = await _auth_ws(token)
     if user is None:
-        await ws.close(code=4001)
+        await ws.accept()
+        await ws.close(code=4001, reason="Unauthorized")
         return
 
     await ws.accept()
