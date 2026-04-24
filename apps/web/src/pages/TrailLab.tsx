@@ -1340,6 +1340,7 @@ export default function TrailLab() {
 
       </div>
       </div>
+      </div>
 
       <WarningModal
         open={Boolean(deleteTarget)}
