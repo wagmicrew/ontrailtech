@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { adminFetch } from '../../webos/core/admin-fetch';
 
 interface LensConfig {
   id?: string;
@@ -34,6 +35,12 @@ interface ConnectionTest {
   lens_connection: { success: boolean; message: string; chain_id?: number; api_url?: string };
   grove_connection: { success: boolean; message: string; api_url?: string };
   lens_testnet: { success: boolean; message: string; chain_id?: number };
+}
+
+interface ConsoleLog {
+  level: 'log' | 'warn' | 'error';
+  msg: string;
+  ts: string;
 }
 
 interface SyncStatus {
@@ -142,6 +149,30 @@ export default function LensPage() {
   const [connectionTest, setConnectionTest] = useState<ConnectionTest | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [activeTab, setActiveTab] = useState('config');
+  const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
+  const [logsCopied, setLogsCopied] = useState(false);
+  const originalConsole = useRef<{ log: typeof console.log; warn: typeof console.warn; error: typeof console.error } | null>(null);
+
+  useEffect(() => {
+    const push = (level: ConsoleLog['level'], args: any[]) => {
+      const msg = args.map((a) => {
+        if (a instanceof Error) return `${a.message}`;
+        if (typeof a === 'object') { try { return JSON.stringify(a, null, 2); } catch { return String(a); } }
+        return String(a);
+      }).join(' ');
+      setConsoleLogs((prev) => [...prev.slice(-199), { level, msg, ts: new Date().toLocaleTimeString() }]);
+    };
+    const orig = { log: console.log, warn: console.warn, error: console.error };
+    originalConsole.current = orig;
+    console.log = (...args) => { orig.log(...args); push('log', args); };
+    console.warn = (...args) => { orig.warn(...args); push('warn', args); };
+    console.error = (...args) => { orig.error(...args); push('error', args); };
+    return () => {
+      console.log = orig.log;
+      console.warn = orig.warn;
+      console.error = orig.error;
+    };
+  }, []);
 
   useEffect(() => {
     fetchConfig();
@@ -151,8 +182,7 @@ export default function LensPage() {
 
   const fetchConfig = async () => {
     try {
-      const response = await fetch('/api/admin/lens/config');
-      const data = await response.json();
+      const data = await adminFetch('/api/admin/lens/config');
       setConfig(data);
     } catch (error) {
       console.error('Failed to fetch Lens config:', error);
@@ -163,9 +193,7 @@ export default function LensPage() {
 
   const fetchTestStatus = async () => {
     try {
-      const response = await fetch('/api/admin/lens/tests/status');
-      const data = await response.json();
-      console.log('Test status:', data);
+      await adminFetch('/api/admin/lens/tests/status');
     } catch (error) {
       console.error('Failed to fetch test status:', error);
     }
@@ -173,8 +201,7 @@ export default function LensPage() {
 
   const fetchSyncStatus = async () => {
     try {
-      const response = await fetch('/api/admin/lens/sync/status');
-      const data = await response.json();
+      const data = await adminFetch('/api/admin/lens/sync/status');
       setSyncStatus(data);
     } catch (error) {
       console.error('Failed to fetch sync status:', error);
@@ -198,19 +225,14 @@ export default function LensPage() {
     setSaving(true);
     setSaveMsg(null);
     try {
-      const response = await fetch('/api/admin/lens/config', {
+      await adminFetch('/api/admin/lens/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
-      if (response.ok) {
-        setSaveMsg({ ok: true, text: 'Configuration saved successfully.' });
-      } else {
-        setSaveMsg({ ok: false, text: 'Server returned an error. Check API logs.' });
-      }
-    } catch (error) {
+      setSaveMsg({ ok: true, text: 'Configuration saved successfully.' });
+    } catch (error: any) {
       console.error('Failed to save config:', error);
-      setSaveMsg({ ok: false, text: 'Network error — could not save configuration.' });
+      setSaveMsg({ ok: false, text: error?.message || 'Could not save configuration.' });
     } finally {
       setSaving(false);
     }
@@ -220,8 +242,7 @@ export default function LensPage() {
     setTestRunning(true);
     setTestResult(null);
     try {
-      const response = await fetch('/api/admin/lens/tests/run', { method: 'POST' });
-      const data = await response.json();
+      const data = await adminFetch('/api/admin/lens/tests/run', { method: 'POST' });
       setTestResult(data);
     } catch (error) {
       console.error('Failed to run tests:', error);
@@ -233,8 +254,7 @@ export default function LensPage() {
 
   const testConnection = async () => {
     try {
-      const response = await fetch('/api/admin/lens/tests/connection', { method: 'POST' });
-      const data = await response.json();
+      const data = await adminFetch('/api/admin/lens/tests/connection', { method: 'POST' });
       setConnectionTest(data);
     } catch (error) {
       console.error('Failed to test connection:', error);
@@ -607,6 +627,45 @@ export default function LensPage() {
       {activeTab === 'tests' && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Lens Integration Tests</h2>
+
+          {/* Console capture */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-800 text-white">
+              <span className="text-xs font-mono font-semibold">Console Output</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const text = consoleLogs.map((l) => `[${l.ts}] [${l.level.toUpperCase()}] ${l.msg}`).join('\n');
+                    navigator.clipboard.writeText(text);
+                    setLogsCopied(true);
+                    setTimeout(() => setLogsCopied(false), 2000);
+                  }}
+                  className="px-2 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 rounded"
+                >
+                  {logsCopied ? '✓ Copied' : 'Copy All'}
+                </button>
+                <button
+                  onClick={() => setConsoleLogs([])}
+                  className="px-2 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 rounded"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="bg-gray-900 text-gray-100 font-mono text-xs p-3 h-48 overflow-y-auto">
+              {consoleLogs.length === 0 ? (
+                <span className="text-gray-500">No output yet — run a test or save config to see logs here.</span>
+              ) : (
+                consoleLogs.map((l, i) => (
+                  <div key={i} className={`leading-5 ${l.level === 'error' ? 'text-red-400' : l.level === 'warn' ? 'text-yellow-400' : 'text-gray-300'}`}>
+                    <span className="text-gray-500 select-none">[{l.ts}] </span>
+                    <span className={`font-bold select-none ${l.level === 'error' ? 'text-red-500' : l.level === 'warn' ? 'text-yellow-500' : 'text-green-500'}`}>[{l.level.toUpperCase()}] </span>
+                    {l.msg}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
           
           <div className="flex gap-2">
             <button
