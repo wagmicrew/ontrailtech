@@ -1,4 +1,4 @@
-﻿/**
+/**
  * TrailLabPage — Admin full trail editor
  * • Collapsible sidebar drawer with trail list
  * • Bento grid gallery (spotlight + mini cards)
@@ -109,10 +109,12 @@ function Pill({ color, children }: { color: 'green' | 'amber' | 'gray'; children
 
 function StatBento({ label, value, note, accent }: { label: string; value: string; note?: string; accent?: string }) {
   return (
-    <div className={`rounded-2xl border bg-white p-4 shadow-sm flex flex-col justify-between ${accent || 'border-gray-100'}`}>
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">{label}</p>
-      <p className="text-3xl font-black text-gray-900 mt-1 leading-none">{value}</p>
-      {note && <p className="text-[10px] text-gray-400 mt-1">{note}</p>}
+    <div className={`rounded-xl border bg-white px-3 py-2 shadow-sm flex items-center gap-2 ${accent || 'border-gray-100'}`}>
+      <div className="flex-1 min-w-0">
+        <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+        <p className="text-lg font-bold text-gray-900 leading-tight">{value}</p>
+      </div>
+      {note && <p className="text-[8px] text-gray-400 flex-shrink-0">{note}</p>}
     </div>
   );
 }
@@ -135,77 +137,63 @@ function BentoTrailCard({
 }) {
   const status = trail.minted ? 'minted' : trail.published ? 'published' : 'draft';
   const barCls = status === 'minted'
-    ? 'bg-gradient-to-r from-amber-400 to-yellow-500'
+    ? 'bg-amber-400'
     : status === 'published'
-    ? 'bg-gradient-to-r from-emerald-400 to-green-500'
-    : 'bg-gradient-to-r from-gray-200 to-gray-300';
+    ? 'bg-emerald-400'
+    : 'bg-gray-300';
 
   return (
     <div
       onClick={onEdit}
-      className={`group rounded-2xl border bg-white shadow-sm overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${selected ? 'border-emerald-400 ring-2 ring-emerald-200' : 'border-gray-100'} ${spotlight ? 'col-span-2 row-span-1' : ''}`}
+      className={`group rounded-xl border bg-white shadow-sm overflow-hidden cursor-pointer transition-all hover:shadow-md ${selected ? 'border-emerald-400 ring-1 ring-emerald-200' : 'border-gray-100'}`}
     >
-      <div className={`h-1.5 w-full ${barCls}`} />
-      <div className={`p-4 ${spotlight ? 'flex gap-5 items-start' : ''}`}>
+      <div className="flex items-start gap-2 p-2">
+        <div className={`w-1 h-8 rounded-full flex-shrink-0 ${barCls}`} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-start gap-2 justify-between">
-            <div className="min-w-0">
-              <h3 className={`font-bold text-gray-900 truncate ${spotlight ? 'text-base' : 'text-sm'}`}>{trail.name}</h3>
-              <p className="text-xs text-gray-400 mt-0.5 truncate">
-                {trail.ownerName} · {trail.distanceKm > 0 ? `${trail.distanceKm.toFixed(1)} km` : 'draft'} · {trail.difficulty}
-              </p>
-            </div>
-            <Pill color={status === 'minted' ? 'amber' : status === 'published' ? 'green' : 'gray'}>
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-[11px] font-semibold text-gray-900 truncate flex-1">{trail.name}</h3>
+            <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-medium ${
+              status === 'minted' ? 'bg-amber-100 text-amber-700' : 
+              status === 'published' ? 'bg-emerald-100 text-emerald-700' : 
+              'bg-gray-100 text-gray-500'
+            }`}>
               {status}
-            </Pill>
+            </span>
           </div>
-
-          {spotlight && trail.description && (
-            <p className="mt-2 text-xs text-gray-500 line-clamp-2">{trail.description}</p>
-          )}
-
-          <div className="mt-3 grid grid-cols-4 gap-1.5">
-            {[
-              { v: trail.points.length, l: 'pts' },
-              { v: trail.pois.length,   l: 'POIs' },
-              { v: trail.views,         l: 'views' },
-              { v: trail.reputation,    l: 'rep' },
-            ].map(({ v, l }) => (
-              <div key={l} className="rounded-xl bg-gray-50 py-1.5 text-center">
-                <p className="text-xs font-bold text-gray-900">{v}</p>
-                <p className="text-[9px] text-gray-400">{l}</p>
-              </div>
-            ))}
+          <p className="text-[9px] text-gray-400 truncate">
+            {trail.distanceKm > 0 ? `${trail.distanceKm.toFixed(1)} km` : 'draft'} · {trail.difficulty}
+          </p>
+          <div className="flex gap-2 mt-1.5 text-[9px] text-gray-500">
+            <span>{trail.points.length} pts</span>
+            <span>{trail.pois.length} POIs</span>
+            <span>{trail.views} views</span>
           </div>
         </div>
+      </div>
 
-        <div
-          className={`flex gap-1 mt-3 ${spotlight ? 'mt-0 flex-col justify-start min-w-[80px]' : ''}`}
-          onClick={e => e.stopPropagation()}
-        >
-          <button onClick={onEdit}
-            className="flex-1 rounded-lg bg-gray-900 text-white text-[10px] font-bold py-1.5 px-2 hover:bg-emerald-600 transition-colors">
-            Edit
+      <div className="px-2 pb-2 flex gap-1" onClick={e => e.stopPropagation()}>
+        <button onClick={onEdit}
+          className="flex-1 rounded-lg bg-gray-900 text-white text-[9px] font-bold py-1 px-1.5 hover:bg-emerald-600 transition-colors">
+          Edit
+        </button>
+        {!trail.published && (
+          <button onClick={onPublish} disabled={busy}
+            className="rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-[9px] font-bold py-1 px-1.5 hover:bg-emerald-100 transition-colors disabled:opacity-40">
+            Pub
           </button>
-          {!trail.published && (
-            <button onClick={onPublish} disabled={busy}
-              className="flex-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] font-bold py-1.5 px-2 hover:bg-emerald-100 transition-colors disabled:opacity-40">
-              Publish
-            </button>
-          )}
-          {!trail.minted && (
-            <button onClick={onMint} disabled={busy}
-              className="flex-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[10px] font-bold py-1.5 px-2 hover:bg-amber-100 transition-colors disabled:opacity-40">
-              Mint
-            </button>
-          )}
-          {canDeleteTrail(trail) && (
-            <button onClick={onDelete} disabled={busy}
-              className="rounded-lg border border-red-100 bg-red-50 text-red-500 text-[10px] font-bold px-2 py-1.5 hover:bg-red-100 transition-colors disabled:opacity-40">
-              X
-            </button>
-          )}
-        </div>
+        )}
+        {!trail.minted && (
+          <button onClick={onMint} disabled={busy}
+            className="rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[9px] font-bold py-1 px-1.5 hover:bg-amber-100 transition-colors disabled:opacity-40">
+            Mint
+          </button>
+        )}
+        {canDeleteTrail(trail) && (
+          <button onClick={onDelete} disabled={busy}
+            className="rounded-lg border border-red-100 bg-red-50 text-red-500 text-[9px] font-bold px-1.5 py-1 hover:bg-red-100 transition-colors disabled:opacity-40">
+            ×
+          </button>
+        )}
       </div>
     </div>
   );
@@ -310,6 +298,7 @@ export default function TrailLabPage() {
 
   const [sidebarOpen, setSidebarOpen]     = useState(true);
   const [searchInput, setSearchInput]     = useState('');
+  const [trailsAccordionOpen, setTrailsAccordionOpen] = useState(true);
   const [galleryOpen, setGalleryOpen]     = useState(true);
 
   const [mapMode, setMapMode]             = useState<'select' | 'checkpoint' | 'detour'>('select');
@@ -699,7 +688,14 @@ export default function TrailLabPage() {
   return (
     <div className="flex h-full min-h-0 overflow-hidden">
 
-      <aside className={`${sidebarOpen ? 'w-72' : 'w-0'} flex-shrink-0 bg-white border-r border-gray-100 flex flex-col transition-all duration-200 overflow-hidden`}>
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/20 z-10 lg:hidden" 
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <aside className={`${sidebarOpen ? 'w-72' : 'w-0'} flex-shrink-0 bg-white border-r border-gray-100 flex flex-col transition-all duration-200 overflow-hidden absolute lg:relative z-20 h-full shadow-xl lg:shadow-none`}>
         <div className="h-12 flex items-center gap-2 px-3 border-b border-gray-100 flex-shrink-0">
           <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center flex-shrink-0">
             <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
@@ -707,7 +703,15 @@ export default function TrailLabPage() {
             </svg>
           </div>
           <span className="text-xs font-bold text-gray-800 flex-1 truncate">Trail Lab</span>
-          <span className="text-[10px] text-gray-400">{trails.length} trails</span>
+          <button 
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden p-1 rounded hover:bg-gray-100 text-gray-400"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <span className="hidden sm:inline text-[10px] text-gray-400">{trails.length} trails</span>
         </div>
 
         <div className="px-3 py-2 flex-shrink-0">
@@ -734,14 +738,92 @@ export default function TrailLabPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
-          {loading && <p className="text-center text-xs text-gray-400 py-4">Loading...</p>}
-          {!loading && filteredTrails.length === 0 && (
-            <p className="text-center text-xs text-gray-400 py-6">No trails. Create or import one.</p>
+        {/* Trails Accordion */}
+        <div className="flex-shrink-0 border-b border-gray-100">
+          <button
+            onClick={() => setTrailsAccordionOpen(o => !o)}
+            className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+              </svg>
+              Trails ({filteredTrails.length})
+            </span>
+            <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${trailsAccordionOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {trailsAccordionOpen && (
+            <div className="px-2 pb-2 space-y-1.5 max-h-[280px] overflow-y-auto">
+              {loading && <p className="text-center text-xs text-gray-400 py-4">Loading...</p>}
+              {!loading && filteredTrails.length === 0 && (
+                <p className="text-center text-xs text-gray-400 py-4">No trails. Create or import one.</p>
+              )}
+              {filteredTrails.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => selectTrail(t.id)}
+                  className={`w-full text-left p-2 rounded-xl transition-all border ${t.id === selectedTrailId ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-100 hover:border-gray-200'}`}
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold text-gray-800 truncate">{t.name}</p>
+                      <p className="text-[9px] text-gray-400 truncate">
+                        {t.distanceKm > 0 ? `${t.distanceKm.toFixed(1)} km` : 'draft'} · {t.difficulty}
+                      </p>
+                    </div>
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1 ${t.minted ? 'bg-amber-400' : t.published ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+                  </div>
+                  <div className="flex gap-2 mt-1.5 text-[9px] text-gray-500">
+                    <span>{t.points.length} pts</span>
+                    <span>{t.pois.length} POIs</span>
+                  </div>
+                </button>
+              ))}
+            </div>
           )}
-          {filteredTrails.map(t => (
-            <SidebarRow key={t.id} trail={t} selected={t.id === selectedTrailId} onEdit={() => selectTrail(t.id)} />
-          ))}
+        </div>
+
+        {/* Gallery Accordion */}
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          <div className="flex-shrink-0 border-b border-gray-100">
+            <button
+              onClick={() => setGalleryOpen(o => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                </svg>
+                Gallery
+              </span>
+              <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${galleryOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+          {galleryOpen && (
+            <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2">
+              {filteredTrails.length === 0 ? (
+                <p className="text-center text-xs text-gray-400 py-4">No trails to display</p>
+              ) : (
+                filteredTrails.map((trail, i) => (
+                  <BentoTrailCard
+                    key={trail.id}
+                    trail={trail}
+                    selected={trail.id === selectedTrailId}
+                    spotlight={false}
+                    busy={busyTrailId === trail.id}
+                    onEdit={() => selectTrail(trail.id)}
+                    onPublish={() => handlePublish(trail)}
+                    onMint={() => handlePublish(trail, true)}
+                    onDelete={() => setDeleteTarget(trail)}
+                  />
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         <div className="border-t border-gray-100 px-3 py-2 flex gap-1.5 flex-shrink-0">
@@ -794,14 +876,10 @@ export default function TrailLabPage() {
               className="rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-50 transition-colors" title="Refresh GPS">
               GPS
             </button>
-            <button onClick={() => setGalleryOpen(o => !o)}
-              className={`rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition-colors ${galleryOpen ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
-              Gallery
-            </button>
           </div>
         </div>
 
-        <div className="flex-1 p-5 space-y-5">
+        <div className="flex-1 p-3 lg:p-4 space-y-3 lg:space-y-4 min-h-0 flex flex-col overflow-hidden">
 
           {(notice || error) && (
             <div className={`rounded-2xl border px-4 py-2.5 text-xs flex items-center justify-between ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
@@ -810,45 +888,15 @@ export default function TrailLabPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-3">
+          <div className="flex flex-wrap gap-2">
             <StatBento label="Trails" value={String(trails.length)} note="in studio" accent="border-emerald-100" />
             <StatBento label="Views" value={String(totalViews)} note="total" />
-            <StatBento label="Reputation" value={String(totalReputation)} note="combined" />
-            <StatBento label="POI pts" value={String(totalPoiRewards)} note="active trail" />
-            <StatBento label="Published" value={String(trails.filter(t => t.published).length)} note="live" accent="border-green-100" />
+            <StatBento label="Rep" value={String(totalReputation)} note="combined" />
+            <StatBento label="POI pts" value={String(totalPoiRewards)} note="active" />
+            <StatBento label="Pub" value={String(trails.filter(t => t.published).length)} note="live" accent="border-green-100" />
             <StatBento label="Minted" value={String(trails.filter(t => t.minted).length)} note="locked" accent="border-amber-100" />
           </div>
 
-          {galleryOpen && (
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                  Trail gallery &mdash; {filteredTrails.length} trail{filteredTrails.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              {filteredTrails.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-gray-200 p-10 text-center text-sm text-gray-400">
-                  {loading ? 'Loading...' : 'No trails. Create a new draft or import a file.'}
-                </div>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 auto-rows-auto">
-                  {filteredTrails.map((trail, i) => (
-                    <BentoTrailCard
-                      key={trail.id}
-                      trail={trail}
-                      selected={trail.id === selectedTrailId}
-                      spotlight={i % 5 === 0}
-                      busy={busyTrailId === trail.id}
-                      onEdit={() => selectTrail(trail.id)}
-                      onPublish={() => handlePublish(trail)}
-                      onMint={() => handlePublish(trail, true)}
-                      onDelete={() => setDeleteTarget(trail)}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
 
           <div ref={editorRef}>
             {!selectedTrail ? (
@@ -856,10 +904,10 @@ export default function TrailLabPage() {
                 Select a trail from the sidebar or gallery to open the editor.
               </div>
             ) : (
-              <div className="grid xl:grid-cols-[1fr_360px] gap-5">
+              <div className="grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_320px] gap-4 flex-1 min-h-0">
 
-                <div className="space-y-4">
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
+                <div className="flex flex-col gap-3 min-h-0 order-1">
+                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex flex-wrap items-center gap-2 flex-shrink-0">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-gray-900 truncate">{selectedTrail.name}</h3>
                       <p className="text-[10px] text-gray-400 mt-0.5">
@@ -907,7 +955,7 @@ export default function TrailLabPage() {
                         {selectedTrail.points.length} pts · {totalPoiRewards} POI pts
                       </span>
                     </div>
-                    <div className="h-[460px]">
+                    <div className="flex-1 min-h-[250px] h-[calc(100vh-240px)] lg:h-[calc(100vh-260px)]">
                       <TrailMapEditor
                         trail={selectedTrail}
                         canEdit={true}
@@ -926,7 +974,7 @@ export default function TrailLabPage() {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col min-h-0 order-2 lg:order-2">
                   <div className="flex border-b border-gray-100 flex-shrink-0">
                     {([
                       { id: 'details',     label: 'Details' },
@@ -935,13 +983,13 @@ export default function TrailLabPage() {
                       { id: 'nearby',      label: 'Nearby' },
                     ] as const).map(tab => (
                       <button key={tab.id} onClick={() => setEditorTab(tab.id)}
-                        className={`flex-1 py-2.5 text-[10px] font-bold transition ${editorTab === tab.id ? 'border-b-2 border-emerald-500 text-emerald-700 bg-emerald-50/50' : 'text-gray-400 hover:text-gray-600'}`}>
+                        className={`flex-1 py-2 text-[10px] font-bold transition ${editorTab === tab.id ? 'border-b-2 border-emerald-500 text-emerald-700 bg-emerald-50/50' : 'text-gray-400 hover:text-gray-600'}`}>
                         {tab.label}
                       </button>
                     ))}
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
 
                     {editorTab === 'details' && (
                       <div className="grid gap-3 grid-cols-2">
@@ -1135,16 +1183,16 @@ export default function TrailLabPage() {
 
                   </div>
 
-                  <div className="border-t border-gray-100 px-4 py-3 flex-shrink-0">
-                    <p className="text-[9px] text-gray-400 font-semibold uppercase tracking-widest mb-1.5">
+                  <div className="border-t border-gray-100 px-3 py-2 flex-shrink-0">
+                    <p className="text-[9px] text-gray-400 font-semibold uppercase tracking-widest mb-1">
                       {SUPPORTED_IMPORT_FORMATS.length} import formats
                     </p>
                     <div className="flex flex-wrap gap-1">
-                      {SUPPORTED_IMPORT_FORMATS.slice(0, 12).map(f => (
+                      {SUPPORTED_IMPORT_FORMATS.slice(0, 8).map(f => (
                         <span key={f} className="text-[8px] bg-gray-50 border border-gray-100 text-gray-500 rounded-full px-1.5 py-0.5">{f}</span>
                       ))}
-                      {SUPPORTED_IMPORT_FORMATS.length > 12 && (
-                        <span className="text-[8px] bg-gray-50 border border-gray-100 text-gray-500 rounded-full px-1.5 py-0.5">+{SUPPORTED_IMPORT_FORMATS.length - 12} more</span>
+                      {SUPPORTED_IMPORT_FORMATS.length > 8 && (
+                        <span className="text-[8px] bg-gray-50 border border-gray-100 text-gray-500 rounded-full px-1.5 py-0.5">+{SUPPORTED_IMPORT_FORMATS.length - 8} more</span>
                       )}
                     </div>
                   </div>

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 43200  # 30 days
     jwt_refresh_token_expire_days: int = 30
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    cors_origins: str = "http://localhost:5173,http://localhost:3000,https://app.ontrail.tech,https://ontrail.tech"
     google_client_id: str = ""
     google_client_secret: str = ""
     apple_client_id: str = ""

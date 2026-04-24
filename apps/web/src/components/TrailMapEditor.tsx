@@ -403,11 +403,11 @@ export default function TrailMapEditor({
   }, []);
 
   return (
-    <div className="space-y-3">
-      <div ref={mapContainerRef} className="h-[440px] w-full overflow-hidden rounded-[24px] border border-slate-200 bg-slate-100" />
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-        <span>Mode: {mode === 'select' ? 'Select, drag, or place a chosen checkpoint on click' : mode === 'checkpoint' ? 'Add checkpoint on click' : 'Add detour point on click'}</span>
-        <span>{mapStatus || 'Click any connector line to add a checkpoint or a POI directly on it.'}</span>
+    <div className="h-full flex flex-col gap-2">
+      <div ref={mapContainerRef} className="flex-1 w-full min-h-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100" />
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 flex-shrink-0">
+        <span>Mode: {mode === 'select' ? 'Select/drag' : mode === 'checkpoint' ? 'Add checkpoint on click' : 'Add detour on click'}</span>
+        <span>{mapStatus || 'Click line to add checkpoint or POI'}</span>
       </div>
     </div>
   );

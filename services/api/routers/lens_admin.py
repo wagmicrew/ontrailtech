@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 
 from database import get_db
-from models import AdminConfig, User, POI, Route
+from models import AdminConfig, User, POI, Route, LensConfig
 from dependencies import require_admin
 from lens_client import LensClient, sync_user_with_lens
 from lens_sync import get_lens_sync_service
@@ -76,29 +76,6 @@ class LensProfileSyncRequest(BaseModel):
 
 
 # ── Lens Configuration Endpoints ──
-
-@router.get("/lens/config")
-async def get_lens_config(
-    user: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Get Lens Protocol configuration."""
-    result = await db.execute(
-        select(AdminConfig).where(AdminConfig.config_key == "lens_config")
-    )
-    config = result.scalar_one_or_none()
-    
-    if not config:
-        # Return default configuration
-        return {
-            "chain_id": 371111,
-            "rpc_url": "https://rpc.lens.xyz",
-            "api_url": "https://api.lens.xyz",
-            "api_key": None,
-        }
-    
-    return config.config_value
-
 
 @router.post("/lens/config")
 async def update_lens_config(
@@ -168,22 +145,48 @@ async def patch_lens_config(
     db: AsyncSession = Depends(get_db),
 ):
     """Partially update Lens Protocol configuration."""
-    result = await db.execute(
-        select(AdminConfig).where(AdminConfig.config_key == "lens_config")
-    )
+    from decimal import Decimal
+    
+    result = await db.execute(select(LensConfig))
     config = result.scalar_one_or_none()
     
     if not config:
         raise HTTPException(status_code=404, detail="Lens configuration not found")
     
-    if req.chain_id is not None:
-        config.config_value["chain_id"] = req.chain_id
-    if req.rpc_url is not None:
-        config.config_value["rpc_url"] = req.rpc_url
-    if req.api_url is not None:
-        config.config_value["api_url"] = req.api_url
-    if req.api_key is not None:
-        config.config_value["api_key"] = req.api_key
+    if req.lens_api_key is not None:
+        config.lens_api_key = req.lens_api_key
+    if req.lens_api_url is not None:
+        config.lens_api_url = req.lens_api_url
+    if req.lens_graphql_url is not None:
+        config.lens_graphql_url = req.lens_graphql_url
+    if req.lens_rpc_url is not None:
+        config.lens_rpc_url = req.lens_rpc_url
+    if req.lens_chain_id is not None:
+        config.lens_chain_id = req.lens_chain_id
+    if req.auth_endpoint_url is not None:
+        config.auth_endpoint_url = req.auth_endpoint_url
+    if req.auth_secret is not None:
+        config.auth_secret = req.auth_secret
+    if req.auth_access is not None:
+        config.auth_access = req.auth_access
+    if req.lens_wallet_address is not None:
+        config.lens_wallet_address = req.lens_wallet_address
+    if req.lens_explorer_url is not None:
+        config.lens_explorer_url = req.lens_explorer_url
+    if req.mode is not None:
+        config.mode = req.mode
+    if req.friendpass_contract_address is not None:
+        config.friendpass_contract_address = req.friendpass_contract_address
+    if req.profile_wallet_contract_address is not None:
+        config.profile_wallet_contract_address = req.profile_wallet_contract_address
+    if req.gho_onramp_enabled is not None:
+        config.gho_onramp_enabled = req.gho_onramp_enabled
+    if req.gho_onramp_amount is not None:
+        config.gho_onramp_amount = Decimal(str(req.gho_onramp_amount))
+    if req.lens_token_onramp_enabled is not None:
+        config.lens_token_onramp_enabled = req.lens_token_onramp_enabled
+    if req.lens_token_onramp_amount is not None:
+        config.lens_token_onramp_amount = Decimal(str(req.lens_token_onramp_amount))
     
     config.updated_by = user.id
     await db.commit()
@@ -722,8 +725,6 @@ async def get_lens_config(
     """
     Get current Lens Protocol configuration from database.
     """
-    from models import LensConfig
-    
     result = await db.execute(select(LensConfig))
     config = result.scalar_one_or_none()
     
@@ -815,7 +816,7 @@ async def onramp_gho(
     """
     Admin onramp GHO tokens to a user for gas/testing.
     """
-    from models import LensConfig, ProfileWallet
+    from models import ProfileWallet
     from decimal import Decimal
     
     # Get Lens config
@@ -859,7 +860,7 @@ async def onramp_lens(
     """
     Admin onramp Lens tokens to a user for gas/testing.
     """
-    from models import LensConfig, ProfileWallet
+    from models import ProfileWallet
     from decimal import Decimal
     
     # Get Lens config
